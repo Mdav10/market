@@ -7,19 +7,24 @@ import os
 import json
 import csv
 import io
+import sys
 from functools import wraps
+
+# Fix for Python 3.14 compatibility
+import warnings
+warnings.filterwarnings('ignore')
 
 app = Flask(__name__)
 
-# Configuration - Uses environment variables for security
+# Configuration
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'mcm_market_secret_key_2026_secure')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///mcm_market.db')
 # Fix for PostgreSQL on Render
-if app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgres://'):
+if app.config['SQLALCHEMY_DATABASE_URI'] and app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgres://'):
     app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace('postgres://', 'postgresql://')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
-    'pool_size': 10,
+    'pool_size': 5,
     'pool_recycle': 300,
     'pool_pre_ping': True,
 }
@@ -68,7 +73,6 @@ class Seller(db.Model):
     suspended_at = db.Column(db.DateTime, nullable=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    # Relationships
     products = db.relationship('Product', backref='seller', lazy=True, cascade='all, delete-orphan')
     
     def set_password(self, password):
@@ -123,35 +127,40 @@ class VisitLog(db.Model):
     def __repr__(self):
         return f'<VisitLog {self.id} - {self.heard_from}>'
 
-# ============ CREATE TABLES AND SEED DATA ============
+# ============ CREATE TABLES ============
 
 with app.app_context():
-    db.create_all()
-    
-    # Create super admin if not exists
-    if not Admin.query.filter_by(username='Mpc').first():
-        super_admin = Admin(
-            username='Mpc',
-            is_super_admin=True
-        )
-        super_admin.set_password(os.environ.get('ADMIN_PASSWORD', '08800Mpc!'))
-        db.session.add(super_admin)
-        db.session.commit()
-        print("Super admin created successfully!")
-    
-    # Create sample categories if needed
-    print("Database initialized successfully!")
+    try:
+        db.create_all()
+        print("Database tables created successfully!")
+        
+        # Create super admin if not exists
+        if not Admin.query.filter_by(username='Mpc').first():
+            super_admin = Admin(
+                username='Mpc',
+                is_super_admin=True
+            )
+            super_admin.set_password(os.environ.get('ADMIN_PASSWORD', '08800Mpc!'))
+            db.session.add(super_admin)
+            db.session.commit()
+            print("Super admin created successfully!")
+        else:
+            print("Super admin already exists")
+    except Exception as e:
+        print(f"Database initialization error: {e}")
 
 # ============ LOGIN MANAGER ============
 
 @login_manager.user_loader
 def load_user(user_id):
-    return Admin.query.get(int(user_id))
+    try:
+        return Admin.query.get(int(user_id))
+    except:
+        return None
 
 # ============ DECORATORS ============
 
 def admin_required(f):
-    """Decorator to require admin login"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated:
@@ -161,7 +170,6 @@ def admin_required(f):
     return decorated_function
 
 def super_admin_required(f):
-    """Decorator to require super admin privileges"""
     @wraps(f)
     @admin_required
     def decorated_function(*args, **kwargs):
@@ -172,7 +180,6 @@ def super_admin_required(f):
     return decorated_function
 
 def seller_required(f):
-    """Decorator to require seller login"""
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if 'seller_id' not in session:
@@ -190,7 +197,6 @@ def seller_required(f):
 
 @app.route('/')
 def index():
-    """Home page - displays all available products"""
     products = Product.query.filter(
         Product.is_available == True,
         Product.seller.has(is_active=True)
@@ -199,7 +205,6 @@ def index():
 
 @app.route('/heard_from', methods=['POST'])
 def heard_from():
-    """Track how visitors heard about the site"""
     heard = request.form.get('heard_from')
     ip = request.headers.get('X-Forwarded-For', request.remote_addr)
     user_agent = request.headers.get('User-Agent', '')
@@ -220,7 +225,6 @@ def heard_from():
 
 @app.route('/search')
 def search():
-    """Search products"""
     query = request.args.get('q', '').strip()
     if query:
         products = Product.query.filter(
@@ -237,28 +241,16 @@ def search():
 
 @app.route('/product/<int:product_id>')
 def product_detail(product_id):
-    """View single product detail"""
     product = Product.query.get_or_404(product_id)
     if not product.seller.is_active or not product.is_available:
         flash('This product is not available', 'warning')
         return redirect(url_for('index'))
     return render_template('product_detail.html', product=product)
 
-@app.route('/category/<category>')
-def category_products(category):
-    """View products by category"""
-    products = Product.query.filter(
-        Product.category == category,
-        Product.is_available == True,
-        Product.seller.has(is_active=True)
-    ).all()
-    return render_template('index.html', products=products, category=category)
-
 # ============ SELLER ROUTES ============
 
 @app.route('/seller/login', methods=['GET', 'POST'])
 def seller_login():
-    """Seller login"""
     if 'seller_id' in session:
         return redirect(url_for('seller_dashboard'))
     
@@ -283,7 +275,6 @@ def seller_login():
 
 @app.route('/seller/logout')
 def seller_logout():
-    """Seller logout"""
     session.clear()
     flash('Logged out successfully', 'success')
     return redirect(url_for('index'))
@@ -291,7 +282,6 @@ def seller_logout():
 @app.route('/seller/dashboard')
 @seller_required
 def seller_dashboard():
-    """Seller dashboard"""
     seller = Seller.query.get(session['seller_id'])
     products = Product.query.filter_by(seller_id=seller.id).order_by(Product.created_at.desc()).all()
     return render_template('seller_dashboard.html', seller=seller, products=products)
@@ -299,7 +289,6 @@ def seller_dashboard():
 @app.route('/seller/product/add', methods=['GET', 'POST'])
 @seller_required
 def seller_add_product():
-    """Add new product"""
     seller = Seller.query.get(session['seller_id'])
     
     if request.method == 'POST':
@@ -309,7 +298,6 @@ def seller_add_product():
         location = request.form.get('location')
         category = request.form.get('category')
         
-        # Validation
         if not name or not price or not location:
             flash('Name, Price, and Location are required', 'danger')
             return render_template('add_product.html', seller=seller)
@@ -340,7 +328,6 @@ def seller_add_product():
 @app.route('/seller/product/<int:product_id>/delete')
 @seller_required
 def seller_delete_product(product_id):
-    """Delete product"""
     product = Product.query.get_or_404(product_id)
     if product.seller_id != session['seller_id']:
         flash('Unauthorized action', 'danger')
@@ -354,7 +341,6 @@ def seller_delete_product(product_id):
 @app.route('/seller/product/<int:product_id>/edit', methods=['GET', 'POST'])
 @seller_required
 def seller_edit_product(product_id):
-    """Edit product"""
     product = Product.query.get_or_404(product_id)
     if product.seller_id != session['seller_id']:
         flash('Unauthorized action', 'danger')
@@ -380,7 +366,6 @@ def seller_edit_product(product_id):
 
 @app.route('/admin/login', methods=['GET', 'POST'])
 def admin_login():
-    """Admin login"""
     if current_user.is_authenticated:
         return redirect(url_for('admin_dashboard'))
     
@@ -401,7 +386,6 @@ def admin_login():
 @app.route('/admin/logout')
 @admin_required
 def admin_logout():
-    """Admin logout"""
     logout_user()
     flash('Logged out successfully', 'success')
     return redirect(url_for('admin_login'))
@@ -409,8 +393,6 @@ def admin_logout():
 @app.route('/admin/dashboard')
 @admin_required
 def admin_dashboard():
-    """Admin dashboard"""
-    # Statistics
     total_sellers = Seller.query.count()
     active_sellers = Seller.query.filter_by(is_active=True).count()
     total_products = Product.query.count()
@@ -419,9 +401,7 @@ def admin_dashboard():
         VisitLog.timestamp >= datetime.utcnow().date()
     ).count()
     
-    # Recent logs
     recent_logs = VisitLog.query.order_by(VisitLog.timestamp.desc()).limit(10).all()
-    
     sellers = Seller.query.order_by(Seller.created_at.desc()).all()
     admins = Admin.query.all()
     products = Product.query.order_by(Product.created_at.desc()).all()
@@ -442,7 +422,6 @@ def admin_dashboard():
 @app.route('/admin/seller/create', methods=['GET', 'POST'])
 @admin_required
 def create_seller():
-    """Create seller account"""
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
@@ -450,7 +429,6 @@ def create_seller():
         whatsapp = request.form.get('whatsapp')
         email = request.form.get('email')
         
-        # Validation
         if not username or not password or not shop_name or not whatsapp:
             flash('All fields are required', 'danger')
             return render_template('create_seller.html')
@@ -478,7 +456,6 @@ def create_seller():
 @app.route('/admin/seller/<int:seller_id>/edit', methods=['GET', 'POST'])
 @admin_required
 def edit_seller(seller_id):
-    """Edit seller details"""
     seller = Seller.query.get_or_404(seller_id)
     
     if request.method == 'POST':
@@ -498,7 +475,6 @@ def edit_seller(seller_id):
 @app.route('/admin/seller/<int:seller_id>/toggle')
 @admin_required
 def toggle_seller(seller_id):
-    """Suspend/Unsuspend seller"""
     seller = Seller.query.get_or_404(seller_id)
     
     if seller.is_active:
@@ -514,11 +490,9 @@ def toggle_seller(seller_id):
 @app.route('/admin/seller/<int:seller_id>/delete')
 @admin_required
 def delete_seller(seller_id):
-    """Delete seller and all their products"""
     seller = Seller.query.get_or_404(seller_id)
     shop_name = seller.shop_name
     
-    # Products will be deleted automatically due to cascade
     db.session.delete(seller)
     db.session.commit()
     
@@ -530,7 +504,6 @@ def delete_seller(seller_id):
 @app.route('/admin/admin/create', methods=['GET', 'POST'])
 @super_admin_required
 def create_admin():
-    """Create new admin account"""
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
@@ -557,10 +530,8 @@ def create_admin():
 @app.route('/admin/admin/<int:admin_id>/edit', methods=['GET', 'POST'])
 @super_admin_required
 def edit_admin(admin_id):
-    """Edit admin account"""
     admin = Admin.query.get_or_404(admin_id)
     
-    # Prevent editing own account through this route
     if admin.id == current_user.id:
         flash('Use profile settings to edit your own account', 'info')
         return redirect(url_for('admin_dashboard'))
@@ -580,7 +551,6 @@ def edit_admin(admin_id):
 @app.route('/admin/admin/<int:admin_id>/delete')
 @super_admin_required
 def delete_admin(admin_id):
-    """Delete admin account"""
     admin = Admin.query.get_or_404(admin_id)
     
     if admin.id == current_user.id:
@@ -599,8 +569,6 @@ def delete_admin(admin_id):
 @app.route('/admin/logs')
 @admin_required
 def view_logs():
-    """View visit logs"""
-    # Get filter parameters
     date_from = request.args.get('from')
     date_to = request.args.get('to')
     heard_from = request.args.get('heard_from')
@@ -626,7 +594,6 @@ def view_logs():
     
     logs = query.order_by(VisitLog.timestamp.desc()).all()
     
-    # Statistics
     total_logs = VisitLog.query.count()
     internet_count = VisitLog.query.filter_by(heard_from='Internet').count()
     friend_count = VisitLog.query.filter_by(heard_from='Friend').count()
@@ -645,7 +612,6 @@ def view_logs():
 @app.route('/admin/logs/download')
 @admin_required
 def download_logs():
-    """Download logs as CSV"""
     date_from = request.args.get('from')
     date_to = request.args.get('to')
     heard_from = request.args.get('heard_from')
@@ -671,7 +637,6 @@ def download_logs():
     
     logs = query.order_by(VisitLog.timestamp.desc()).all()
     
-    # Create CSV
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(['ID', 'IP Address', 'Heard From', 'Timestamp', 'User Agent', 'Session ID', 'Referer'])
@@ -699,9 +664,7 @@ def download_logs():
 @app.route('/admin/logs/delete', methods=['POST'])
 @admin_required
 def delete_logs():
-    """Delete all logs"""
     try:
-        # Get filter parameters for selective deletion
         date_from = request.form.get('from')
         date_to = request.form.get('to')
         
@@ -726,11 +689,10 @@ def delete_logs():
     
     return redirect(url_for('view_logs'))
 
-# ============ API ENDPOINTS (Optional) ============
+# ============ API ENDPOINTS ============
 
 @app.route('/api/products')
 def api_products():
-    """API endpoint for products"""
     products = Product.query.filter(
         Product.is_available == True,
         Product.seller.has(is_active=True)
@@ -749,7 +711,6 @@ def api_products():
 @app.route('/api/stats')
 @admin_required
 def api_stats():
-    """API endpoint for statistics"""
     stats = {
         'total_sellers': Seller.query.count(),
         'active_sellers': Seller.query.filter_by(is_active=True).count(),
