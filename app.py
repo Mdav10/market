@@ -2,15 +2,16 @@ from flask import Flask, render_template, request, redirect, url_for, flash, ses
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
 from datetime import datetime, timedelta
 import os
 import json
 import csv
 import io
 import sys
+import base64
 from functools import wraps
-
-# Fix for Python 3.14 compatibility
+from PIL import Image
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -19,7 +20,6 @@ app = Flask(__name__)
 # Configuration
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'mcm_market_secret_key_2026_secure')
 app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///mcm_market.db')
-# Fix for PostgreSQL on Render
 if app.config['SQLALCHEMY_DATABASE_URI'] and app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgres://'):
     app.config['SQLALCHEMY_DATABASE_URI'] = app.config['SQLALCHEMY_DATABASE_URI'].replace('postgres://', 'postgresql://')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -29,50 +29,60 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
     'pool_pre_ping': True,
 }
 
+# Image upload configuration
+UPLOAD_FOLDER = 'static/uploads'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
+
+app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['MAX_CONTENT_LENGTH'] = MAX_CONTENT_LENGTH
+
+# Create upload folder if it doesn't exist
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+
+def allowed_file(filename):
+    return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
+
+def compress_image(image_path, max_size=(800, 800)):
+    """Compress image to reduce size"""
+    try:
+        img = Image.open(image_path)
+        img.thumbnail(max_size, Image.Resampling.LANCZOS)
+        img.save(image_path, optimize=True, quality=85)
+    except Exception as e:
+        print(f"Error compressing image: {e}")
+
 # Initialize database
 db = SQLAlchemy(app)
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'admin_login'
+login_manager.login_view = 'login'
 login_manager.login_message_category = 'info'
 
 # ============ DATABASE MODELS ============
 
-class Admin(UserMixin, db.Model):
-    """Admin users model"""
-    __tablename__ = 'admins'
+class User(UserMixin, db.Model):
+    """Unified User model for both Admins and Sellers"""
+    __tablename__ = 'users'
     
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(200), nullable=False)
+    role = db.Column(db.String(20), nullable=False, default='seller')  # 'admin' or 'seller'
     is_super_admin = db.Column(db.Boolean, default=False)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
-    def set_password(self, password):
-        self.password_hash = generate_password_hash(password)
-    
-    def check_password(self, password):
-        return check_password_hash(self.password_hash, password)
-    
-    def __repr__(self):
-        return f'<Admin {self.username}>'
-
-class Seller(db.Model):
-    """Seller accounts model"""
-    __tablename__ = 'sellers'
-    
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(80), unique=True, nullable=False, index=True)
-    password_hash = db.Column(db.String(200), nullable=False)
-    shop_name = db.Column(db.String(100), nullable=False)
-    whatsapp_number = db.Column(db.String(20), nullable=False)
+    # Seller specific fields
+    shop_name = db.Column(db.String(100))
+    whatsapp_number = db.Column(db.String(20))
     email = db.Column(db.String(100))
-    is_active = db.Column(db.Boolean, default=True, index=True)
+    is_active = db.Column(db.Boolean, default=True)
+    
+    # Timestamps
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     suspended_at = db.Column(db.DateTime, nullable=True)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
+    # Relationships
     products = db.relationship('Product', backref='seller', lazy=True, cascade='all, delete-orphan')
     
     def set_password(self, password):
@@ -80,6 +90,12 @@ class Seller(db.Model):
     
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+    
+    def is_admin(self):
+        return self.role == 'admin'
+    
+    def is_seller(self):
+        return self.role == 'seller'
     
     def suspend(self):
         self.is_active = False
@@ -90,7 +106,7 @@ class Seller(db.Model):
         self.suspended_at = None
     
     def __repr__(self):
-        return f'<Seller {self.shop_name}>'
+        return f'<User {self.username} ({self.role})>'
 
 class Product(db.Model):
     """Products uploaded by sellers"""
@@ -101,13 +117,18 @@ class Product(db.Model):
     description = db.Column(db.Text)
     price = db.Column(db.Float, nullable=False)
     location = db.Column(db.String(200), nullable=False)
-    seller_id = db.Column(db.Integer, db.ForeignKey('sellers.id', ondelete='CASCADE'), nullable=False)
+    seller_id = db.Column(db.Integer, db.ForeignKey('users.id', ondelete='CASCADE'), nullable=False)
     whatsapp_number = db.Column(db.String(20), nullable=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
-    image_url = db.Column(db.String(500), nullable=True)
+    image_filename = db.Column(db.String(500), nullable=True)
     category = db.Column(db.String(50), nullable=True)
     is_available = db.Column(db.Boolean, default=True, index=True)
+    
+    def get_image_url(self):
+        if self.image_filename:
+            return url_for('static', filename=f'uploads/{self.image_filename}')
+        return None
     
     def __repr__(self):
         return f'<Product {self.name}>'
@@ -135,10 +156,12 @@ with app.app_context():
         print("Database tables created successfully!")
         
         # Create super admin if not exists
-        if not Admin.query.filter_by(username='Mpc').first():
-            super_admin = Admin(
+        if not User.query.filter_by(username='Mpc', role='admin').first():
+            super_admin = User(
                 username='Mpc',
-                is_super_admin=True
+                role='admin',
+                is_super_admin=True,
+                is_active=True
             )
             super_admin.set_password(os.environ.get('ADMIN_PASSWORD', '08800Mpc!'))
             db.session.add(super_admin)
@@ -154,7 +177,7 @@ with app.app_context():
 @login_manager.user_loader
 def load_user(user_id):
     try:
-        return Admin.query.get(int(user_id))
+        return User.query.get(int(user_id))
     except:
         return None
 
@@ -164,8 +187,11 @@ def admin_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
         if not current_user.is_authenticated:
-            flash('Please login as admin first', 'danger')
-            return redirect(url_for('admin_login'))
+            flash('Please login first', 'danger')
+            return redirect(url_for('login'))
+        if not current_user.is_admin():
+            flash('Admin access required', 'danger')
+            return redirect(url_for('index'))
         return f(*args, **kwargs)
     return decorated_function
 
@@ -182,16 +208,60 @@ def super_admin_required(f):
 def seller_required(f):
     @wraps(f)
     def decorated_function(*args, **kwargs):
-        if 'seller_id' not in session:
-            flash('Please login as seller first', 'danger')
-            return redirect(url_for('seller_login'))
-        seller = Seller.query.get(session['seller_id'])
-        if not seller or not seller.is_active:
-            session.clear()
+        if not current_user.is_authenticated:
+            flash('Please login first', 'danger')
+            return redirect(url_for('login'))
+        if not current_user.is_seller():
+            flash('Seller access required', 'danger')
+            return redirect(url_for('index'))
+        if not current_user.is_active:
             flash('Your account has been suspended', 'danger')
-            return redirect(url_for('seller_login'))
+            return redirect(url_for('logout'))
         return f(*args, **kwargs)
     return decorated_function
+
+# ============ AUTH ROUTES ============
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        if current_user.is_admin():
+            return redirect(url_for('admin_dashboard'))
+        else:
+            return redirect(url_for('seller_dashboard'))
+    
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+        role = request.form.get('role', 'seller')
+        
+        user = User.query.filter_by(username=username).first()
+        if user and user.check_password(password):
+            if not user.is_active:
+                flash('Your account has been suspended. Contact admin.', 'danger')
+                return render_template('login.html')
+            
+            login_user(user)
+            session['user_id'] = user.id
+            session['user_role'] = user.role
+            
+            flash(f'Welcome back, {user.username}!', 'success')
+            
+            if user.is_admin():
+                return redirect(url_for('admin_dashboard'))
+            else:
+                return redirect(url_for('seller_dashboard'))
+        
+        flash('Invalid credentials', 'danger')
+    
+    return render_template('login.html')
+
+@app.route('/logout')
+def logout():
+    logout_user()
+    session.clear()
+    flash('Logged out successfully', 'success')
+    return redirect(url_for('index'))
 
 # ============ PUBLIC ROUTES ============
 
@@ -249,47 +319,17 @@ def product_detail(product_id):
 
 # ============ SELLER ROUTES ============
 
-@app.route('/seller/login', methods=['GET', 'POST'])
-def seller_login():
-    if 'seller_id' in session:
-        return redirect(url_for('seller_dashboard'))
-    
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        
-        seller = Seller.query.filter_by(username=username).first()
-        if seller and seller.check_password(password):
-            if not seller.is_active:
-                flash('Your account has been suspended. Contact admin.', 'danger')
-                return render_template('seller_login.html')
-            
-            session['seller_id'] = seller.id
-            session['seller_name'] = seller.shop_name
-            flash(f'Welcome back, {seller.shop_name}!', 'success')
-            return redirect(url_for('seller_dashboard'))
-        
-        flash('Invalid credentials', 'danger')
-    
-    return render_template('seller_login.html')
-
-@app.route('/seller/logout')
-def seller_logout():
-    session.clear()
-    flash('Logged out successfully', 'success')
-    return redirect(url_for('index'))
-
 @app.route('/seller/dashboard')
 @seller_required
 def seller_dashboard():
-    seller = Seller.query.get(session['seller_id'])
+    seller = current_user
     products = Product.query.filter_by(seller_id=seller.id).order_by(Product.created_at.desc()).all()
     return render_template('seller_dashboard.html', seller=seller, products=products)
 
 @app.route('/seller/product/add', methods=['GET', 'POST'])
 @seller_required
 def seller_add_product():
-    seller = Seller.query.get(session['seller_id'])
+    seller = current_user
     
     if request.method == 'POST':
         name = request.form.get('name')
@@ -318,6 +358,16 @@ def seller_add_product():
             category=category
         )
         
+        # Handle image upload
+        if 'image' in request.files:
+            file = request.files['image']
+            if file and file.filename != '' and allowed_file(file.filename):
+                filename = secure_filename(f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}")
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+                compress_image(filepath)
+                product.image_filename = filename
+        
         db.session.add(product)
         db.session.commit()
         flash('Product uploaded successfully!', 'success')
@@ -329,9 +379,16 @@ def seller_add_product():
 @seller_required
 def seller_delete_product(product_id):
     product = Product.query.get_or_404(product_id)
-    if product.seller_id != session['seller_id']:
+    if product.seller_id != current_user.id:
         flash('Unauthorized action', 'danger')
         return redirect(url_for('seller_dashboard'))
+    
+    # Delete image file if exists
+    if product.image_filename:
+        try:
+            os.remove(os.path.join(app.config['UPLOAD_FOLDER'], product.image_filename))
+        except:
+            pass
     
     db.session.delete(product)
     db.session.commit()
@@ -342,11 +399,11 @@ def seller_delete_product(product_id):
 @seller_required
 def seller_edit_product(product_id):
     product = Product.query.get_or_404(product_id)
-    if product.seller_id != session['seller_id']:
+    if product.seller_id != current_user.id:
         flash('Unauthorized action', 'danger')
         return redirect(url_for('seller_dashboard'))
     
-    seller = Seller.query.get(session['seller_id'])
+    seller = current_user
     
     if request.method == 'POST':
         product.name = request.form.get('name')
@@ -356,6 +413,23 @@ def seller_edit_product(product_id):
         product.category = request.form.get('category')
         product.is_available = request.form.get('is_available') == 'on'
         
+        # Handle image upload
+        if 'image' in request.files:
+            file = request.files['image']
+            if file and file.filename != '' and allowed_file(file.filename):
+                # Delete old image
+                if product.image_filename:
+                    try:
+                        os.remove(os.path.join(app.config['UPLOAD_FOLDER'], product.image_filename))
+                    except:
+                        pass
+                
+                filename = secure_filename(f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}")
+                filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+                file.save(filepath)
+                compress_image(filepath)
+                product.image_filename = filename
+        
         db.session.commit()
         flash('Product updated successfully!', 'success')
         return redirect(url_for('seller_dashboard'))
@@ -364,37 +438,11 @@ def seller_edit_product(product_id):
 
 # ============ ADMIN ROUTES ============
 
-@app.route('/admin/login', methods=['GET', 'POST'])
-def admin_login():
-    if current_user.is_authenticated:
-        return redirect(url_for('admin_dashboard'))
-    
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        
-        admin = Admin.query.filter_by(username=username).first()
-        if admin and admin.check_password(password):
-            login_user(admin)
-            flash('Welcome back, Admin!', 'success')
-            return redirect(url_for('admin_dashboard'))
-        
-        flash('Invalid credentials', 'danger')
-    
-    return render_template('admin_login.html')
-
-@app.route('/admin/logout')
-@admin_required
-def admin_logout():
-    logout_user()
-    flash('Logged out successfully', 'success')
-    return redirect(url_for('admin_login'))
-
 @app.route('/admin/dashboard')
 @admin_required
 def admin_dashboard():
-    total_sellers = Seller.query.count()
-    active_sellers = Seller.query.filter_by(is_active=True).count()
+    total_sellers = User.query.filter_by(role='seller').count()
+    active_sellers = User.query.filter_by(role='seller', is_active=True).count()
     total_products = Product.query.count()
     total_visits = VisitLog.query.count()
     today_visits = VisitLog.query.filter(
@@ -402,8 +450,8 @@ def admin_dashboard():
     ).count()
     
     recent_logs = VisitLog.query.order_by(VisitLog.timestamp.desc()).limit(10).all()
-    sellers = Seller.query.order_by(Seller.created_at.desc()).all()
-    admins = Admin.query.all()
+    sellers = User.query.filter_by(role='seller').order_by(User.created_at.desc()).all()
+    admins = User.query.filter_by(role='admin').all()
     products = Product.query.order_by(Product.created_at.desc()).all()
     
     return render_template('admin_dashboard.html',
@@ -433,15 +481,17 @@ def create_seller():
             flash('All fields are required', 'danger')
             return render_template('create_seller.html')
         
-        if Seller.query.filter_by(username=username).first():
+        if User.query.filter_by(username=username).first():
             flash('Username already exists', 'danger')
             return render_template('create_seller.html')
         
-        seller = Seller(
+        seller = User(
             username=username,
+            role='seller',
             shop_name=shop_name,
             whatsapp_number=whatsapp,
-            email=email
+            email=email,
+            is_active=True
         )
         seller.set_password(password)
         
@@ -456,7 +506,10 @@ def create_seller():
 @app.route('/admin/seller/<int:seller_id>/edit', methods=['GET', 'POST'])
 @admin_required
 def edit_seller(seller_id):
-    seller = Seller.query.get_or_404(seller_id)
+    seller = User.query.get_or_404(seller_id)
+    if seller.role != 'seller':
+        flash('User is not a seller', 'danger')
+        return redirect(url_for('admin_dashboard'))
     
     if request.method == 'POST':
         seller.shop_name = request.form.get('shop_name')
@@ -475,7 +528,10 @@ def edit_seller(seller_id):
 @app.route('/admin/seller/<int:seller_id>/toggle')
 @admin_required
 def toggle_seller(seller_id):
-    seller = Seller.query.get_or_404(seller_id)
+    seller = User.query.get_or_404(seller_id)
+    if seller.role != 'seller':
+        flash('User is not a seller', 'danger')
+        return redirect(url_for('admin_dashboard'))
     
     if seller.is_active:
         seller.suspend()
@@ -490,8 +546,20 @@ def toggle_seller(seller_id):
 @app.route('/admin/seller/<int:seller_id>/delete')
 @admin_required
 def delete_seller(seller_id):
-    seller = Seller.query.get_or_404(seller_id)
+    seller = User.query.get_or_404(seller_id)
+    if seller.role != 'seller':
+        flash('User is not a seller', 'danger')
+        return redirect(url_for('admin_dashboard'))
+    
     shop_name = seller.shop_name
+    
+    # Delete all products and their images
+    for product in seller.products:
+        if product.image_filename:
+            try:
+                os.remove(os.path.join(app.config['UPLOAD_FOLDER'], product.image_filename))
+            except:
+                pass
     
     db.session.delete(seller)
     db.session.commit()
@@ -509,13 +577,15 @@ def create_admin():
         password = request.form.get('password')
         is_super = request.form.get('is_super') == 'on'
         
-        if Admin.query.filter_by(username=username).first():
+        if User.query.filter_by(username=username).first():
             flash('Username already exists', 'danger')
             return render_template('create_admin.html')
         
-        admin = Admin(
+        admin = User(
             username=username,
-            is_super_admin=is_super
+            role='admin',
+            is_super_admin=is_super,
+            is_active=True
         )
         admin.set_password(password)
         
@@ -530,7 +600,10 @@ def create_admin():
 @app.route('/admin/admin/<int:admin_id>/edit', methods=['GET', 'POST'])
 @super_admin_required
 def edit_admin(admin_id):
-    admin = Admin.query.get_or_404(admin_id)
+    admin = User.query.get_or_404(admin_id)
+    if admin.role != 'admin':
+        flash('User is not an admin', 'danger')
+        return redirect(url_for('admin_dashboard'))
     
     if admin.id == current_user.id:
         flash('Use profile settings to edit your own account', 'info')
@@ -551,7 +624,10 @@ def edit_admin(admin_id):
 @app.route('/admin/admin/<int:admin_id>/delete')
 @super_admin_required
 def delete_admin(admin_id):
-    admin = Admin.query.get_or_404(admin_id)
+    admin = User.query.get_or_404(admin_id)
+    if admin.role != 'admin':
+        flash('User is not an admin', 'danger')
+        return redirect(url_for('admin_dashboard'))
     
     if admin.id == current_user.id:
         flash('Cannot delete your own account', 'danger')
@@ -705,15 +781,16 @@ def api_products():
         'price': p.price,
         'location': p.location,
         'shop_name': p.seller.shop_name,
-        'whatsapp': p.whatsapp_number
+        'whatsapp': p.whatsapp_number,
+        'image': p.get_image_url()
     } for p in products])
 
 @app.route('/api/stats')
 @admin_required
 def api_stats():
     stats = {
-        'total_sellers': Seller.query.count(),
-        'active_sellers': Seller.query.filter_by(is_active=True).count(),
+        'total_sellers': User.query.filter_by(role='seller').count(),
+        'active_sellers': User.query.filter_by(role='seller', is_active=True).count(),
         'total_products': Product.query.count(),
         'total_visits': VisitLog.query.count(),
         'today_visits': VisitLog.query.filter(

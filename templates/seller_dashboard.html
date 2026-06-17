@@ -1,16 +1,93 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Seller Dashboard - MCM Market</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+        * { font-size: 16px; }
+        body { background: #f5f7fa; }
+        .navbar {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            padding: 15px 0;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
+        .navbar-brand { font-size: 1.8rem; font-weight: 700; color: white !important; }
+        .navbar .btn { border-radius: 50px; padding: 10px 25px; font-weight: 600; }
+        .dashboard-card {
+            border: none;
+            border-radius: 20px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.08);
+            transition: all 0.3s ease;
+            background: white;
+            margin-bottom: 25px;
+        }
+        .dashboard-card:hover { transform: translateY(-5px); box-shadow: 0 10px 30px rgba(0,0,0,0.12); }
+        .dashboard-card .card-header {
+            background: transparent;
+            border-bottom: 2px solid #f0f0f0;
+            padding: 20px 25px;
+            font-size: 1.3rem;
+            font-weight: 700;
+        }
+        .dashboard-card .card-body { padding: 25px; }
+        .stat-number { font-size: 2.5rem; font-weight: 700; color: #28a745; }
+        .stat-label { font-size: 1rem; color: #666; }
+        .product-thumb {
+            width: 80px;
+            height: 80px;
+            object-fit: cover;
+            border-radius: 12px;
+        }
+        .product-thumb-placeholder {
+            width: 80px;
+            height: 80px;
+            border-radius: 12px;
+            background: #f0f0f0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            color: #ccc;
+        }
+        .table { font-size: 1rem; }
+        .table th { font-weight: 700; background: #f8f9fa; }
+        .btn-sm { padding: 8px 15px; font-size: 0.9rem; border-radius: 12px; }
+        .info-item { padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+        .info-item:last-child { border-bottom: none; }
+        .info-label { font-weight: 600; color: #666; width: 140px; display: inline-block; }
+        .info-value { color: #333; font-weight: 500; }
+        @media (max-width: 768px) {
+            .navbar-brand { font-size: 1.4rem; }
+            .stat-number { font-size: 2rem; }
+            .product-thumb { width: 60px; height: 60px; }
+            .table { font-size: 0.9rem; }
+            .info-label { width: 100px; }
+            .dashboard-card .card-header { font-size: 1.1rem; padding: 15px 20px; }
+            .dashboard-card .card-body { padding: 20px; }
+        }
+        @media (max-width: 480px) {
+            .table { font-size: 0.8rem; }
+            .btn-sm { font-size: 0.8rem; padding: 6px 10px; }
+            .product-thumb { width: 50px; height: 50px; }
+        }
+    </style>
 </head>
 <body>
-    <nav class="navbar navbar-dark bg-success">
+    <nav class="navbar">
         <div class="container">
-            <span class="navbar-brand">🏪 {{ seller.shop_name }}</span>
-            <div>
-                <a href="{{ url_for('seller_add_product') }}" class="btn btn-light me-2">+ Add Product</a>
-                <a href="{{ url_for('seller_logout') }}" class="btn btn-danger">Logout</a>
+            <span class="navbar-brand">
+                <i class="bi bi-shop me-2"></i>{{ seller.shop_name }}
+            </span>
+            <div class="d-flex gap-2">
+                <a href="{{ url_for('seller_add_product') }}" class="btn btn-light">
+                    <i class="bi bi-plus-circle me-1"></i> Add Product
+                </a>
+                <a href="{{ url_for('logout') }}" class="btn btn-outline-light">
+                    <i class="bi bi-box-arrow-right me-1"></i> Logout
+                </a>
             </div>
         </div>
     </nav>
@@ -18,50 +95,121 @@
     <div class="container mt-4">
         <div class="row">
             <div class="col-md-4">
-                <div class="card">
+                <div class="dashboard-card">
+                    <div class="card-header">
+                        <i class="bi bi-person-circle me-2"></i>Account Info
+                    </div>
                     <div class="card-body">
-                        <h5>Account Info</h5>
-                        <p><strong>Shop:</strong> {{ seller.shop_name }}</p>
-                        <p><strong>WhatsApp:</strong> {{ seller.whatsapp_number }}</p>
-                        <p><strong>Email:</strong> {{ seller.email }}</p>
-                        <p><strong>Status:</strong> <span class="badge bg-success">Active</span></p>
+                        <div class="info-item">
+                            <span class="info-label">Shop:</span>
+                            <span class="info-value">{{ seller.shop_name }}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">WhatsApp:</span>
+                            <span class="info-value">{{ seller.whatsapp_number }}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Email:</span>
+                            <span class="info-value">{{ seller.email or 'Not set' }}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Status:</span>
+                            <span class="badge bg-success" style="font-size:1rem; padding:8px 20px;">
+                                <i class="bi bi-check-circle me-1"></i> Active
+                            </span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Products:</span>
+                            <span class="info-value">{{ products|length }}</span>
+                        </div>
                     </div>
                 </div>
             </div>
+
             <div class="col-md-8">
-                <div class="card">
-                    <div class="card-header">
-                        <h5>My Products ({{ products|length }})</h5>
+                <div class="dashboard-card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-box-seam me-2"></i>My Products ({{ products|length }})</span>
+                        <a href="{{ url_for('seller_add_product') }}" class="btn btn-success btn-sm">
+                            <i class="bi bi-plus-circle me-1"></i> New
+                        </a>
                     </div>
                     <div class="card-body">
-                        <div class="table-responsive">
-                            <table class="table table-striped">
-                                <thead>
-                                    <tr>
-                                        <th>Product</th>
-                                        <th>Price</th>
-                                        <th>Location</th>
-                                        <th>Action</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {% for product in products %}
-                                    <tr>
-                                        <td>{{ product.name }}</td>
-                                        <td>{{ product.price }} FCFA</td>
-                                        <td>{{ product.location }}</td>
-                                        <td>
-                                            <a href="{{ url_for('seller_delete_product', product_id=product.id) }}" class="btn btn-sm btn-danger" onclick="return confirm('Delete this product?')">Delete</a>
-                                        </td>
-                                    </tr>
-                                    {% endfor %}
-                                </tbody>
-                            </table>
-                        </div>
+                        {% if products %}
+                            <div class="table-responsive">
+                                <table class="table table-hover align-middle">
+                                    <thead>
+                                        <tr>
+                                            <th>Image</th>
+                                            <th>Product</th>
+                                            <th>Price</th>
+                                            <th>Location</th>
+                                            <th>Status</th>
+                                            <th>Actions</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for product in products %}
+                                        <tr>
+                                            <td>
+                                                {% if product.image_filename %}
+                                                    <img src="{{ url_for('static', filename='uploads/' + product.image_filename) }}" 
+                                                         class="product-thumb" alt="{{ product.name }}">
+                                                {% else %}
+                                                    <div class="product-thumb-placeholder">
+                                                        <i class="bi bi-image"></i>
+                                                    </div>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <strong>{{ product.name }}</strong>
+                                                {% if product.category %}
+                                                    <br><span class="badge bg-info">{{ product.category }}</span>
+                                                {% endif %}
+                                            </td>
+                                            <td><strong>{{ product.price|int }} FCFA</strong></td>
+                                            <td><i class="bi bi-geo-alt me-1"></i>{{ product.location }}</td>
+                                            <td>
+                                                {% if product.is_available %}
+                                                    <span class="badge bg-success">Available</span>
+                                                {% else %}
+                                                    <span class="badge bg-danger">Unavailable</span>
+                                                {% endif %}
+                                            </td>
+                                            <td>
+                                                <div class="btn-group btn-group-sm">
+                                                    <a href="{{ url_for('seller_edit_product', product_id=product.id) }}" 
+                                                       class="btn btn-warning">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </a>
+                                                    <a href="{{ url_for('seller_delete_product', product_id=product.id) }}" 
+                                                       class="btn btn-danger"
+                                                       onclick="return confirm('Delete this product?')">
+                                                        <i class="bi bi-trash"></i>
+                                                    </a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        {% else %}
+                            <div class="text-center py-5">
+                                <i class="bi bi-box-seam" style="font-size:4rem; color:#ccc;"></i>
+                                <h4 class="mt-3">No products yet</h4>
+                                <p class="text-muted">Click "Add Product" to start selling!</p>
+                                <a href="{{ url_for('seller_add_product') }}" class="btn btn-success">
+                                    <i class="bi bi-plus-circle me-1"></i> Add Your First Product
+                                </a>
+                            </div>
+                        {% endif %}
                     </div>
                 </div>
             </div>
         </div>
     </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>
 </html>
