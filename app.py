@@ -59,7 +59,7 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     suspended_at = db.Column(db.DateTime, nullable=True)
     
-    # Subscription fields
+    # Subscription fields - these are now safe because we added them manually
     subscription_status = db.Column(db.String(20), default='trial')
     trial_start = db.Column(db.DateTime, default=datetime.utcnow)
     trial_end = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(days=3))
@@ -83,7 +83,10 @@ class User(UserMixin, db.Model):
                 return True
             else:
                 self.subscription_status = 'expired'
-                db.session.commit()
+                try:
+                    db.session.commit()
+                except:
+                    pass
                 return False
         
         if self.subscription_status == 'active':
@@ -91,7 +94,10 @@ class User(UserMixin, db.Model):
                 return True
             else:
                 self.subscription_status = 'expired'
-                db.session.commit()
+                try:
+                    db.session.commit()
+                except:
+                    pass
                 return False
         
         return False
@@ -124,7 +130,7 @@ class Product(db.Model):
     category = db.Column(db.String(50))
     is_available = db.Column(db.Boolean, default=True)
     
-    seller = db.relationship('User', backref='products')
+    seller = db.relationship('User', backref='products', foreign_keys=[seller_id])
 
 class VisitLog(db.Model):
     __tablename__ = 'visit_logs'
@@ -152,69 +158,11 @@ class PaymentRequest(db.Model):
     seller = db.relationship('User', foreign_keys=[seller_id], backref='payment_requests')
     reviewer = db.relationship('User', foreign_keys=[reviewed_by])
 
-# ============ CREATE TABLES AND MIGRATE ============
-
-def migrate_database():
-    """Add missing columns if they don't exist"""
-    with app.app_context():
-        try:
-            # Check if columns exist
-            from sqlalchemy import inspect
-            inspector = inspect(db.engine)
-            columns = [col['name'] for col in inspector.get_columns('users')]
-            
-            # Add missing columns
-            with db.engine.connect() as conn:
-                if 'subscription_status' not in columns:
-                    conn.execute('ALTER TABLE users ADD COLUMN subscription_status VARCHAR(20) DEFAULT \'trial\'')
-                    print("✅ Added subscription_status column")
-                
-                if 'trial_start' not in columns:
-                    conn.execute('ALTER TABLE users ADD COLUMN trial_start TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
-                    print("✅ Added trial_start column")
-                
-                if 'trial_end' not in columns:
-                    conn.execute('ALTER TABLE users ADD COLUMN trial_end TIMESTAMP')
-                    print("✅ Added trial_end column")
-                
-                if 'subscription_start' not in columns:
-                    conn.execute('ALTER TABLE users ADD COLUMN subscription_start TIMESTAMP')
-                    print("✅ Added subscription_start column")
-                
-                if 'subscription_end' not in columns:
-                    conn.execute('ALTER TABLE users ADD COLUMN subscription_end TIMESTAMP')
-                    print("✅ Added subscription_end column")
-                
-                if 'subscription_plan' not in columns:
-                    conn.execute('ALTER TABLE users ADD COLUMN subscription_plan VARCHAR(20)')
-                    print("✅ Added subscription_plan column")
-                
-                conn.commit()
-            
-            # Update existing admins
-            admin = User.query.filter_by(role='admin').first()
-            if admin:
-                admin.subscription_status = 'active'
-                db.session.commit()
-            
-            # Update existing sellers with trial
-            sellers = User.query.filter_by(role='seller').all()
-            for seller in sellers:
-                if not seller.trial_end:
-                    seller.trial_end = datetime.utcnow() + timedelta(days=3)
-                    seller.subscription_status = 'trial'
-            db.session.commit()
-            
-            print("✅ Database migration completed!")
-            
-        except Exception as e:
-            print(f"⚠️ Migration warning: {e}")
-            db.session.rollback()
+# ============ CREATE TABLES ============
 
 with app.app_context():
     db.create_all()
     print("✅ Database tables created!")
-    migrate_database()
     
     # Create super admin if not exists
     if not User.query.filter_by(username='Mpc').first():
@@ -229,10 +177,23 @@ with app.app_context():
         db.session.add(admin)
         db.session.commit()
         print("✅ Super admin created!")
+    
+    # Update any existing sellers to have trial
+    sellers = User.query.filter_by(role='seller').all()
+    for seller in sellers:
+        if not seller.trial_end:
+            seller.trial_end = datetime.utcnow() + timedelta(days=3)
+            seller.trial_start = datetime.utcnow()
+            seller.subscription_status = 'trial'
+    db.session.commit()
+    print("✅ Database ready!")
 
 @login_manager.user_loader
 def load_user(user_id):
-    return User.query.get(int(user_id))
+    try:
+        return User.query.get(int(user_id))
+    except:
+        return None
 
 # ============ DECORATORS ============
 
@@ -411,10 +372,10 @@ def submit_payment():
         db.session.add(payment)
         db.session.commit()
         
-        flash('Payment submitted for review! We will notify you once approved.', 'success')
+        flash('Payment submitted for review!', 'success')
         return redirect(url_for('seller_dashboard'))
     
-    flash('Invalid file type. Please upload an image or PDF.', 'danger')
+    flash('Invalid file type', 'danger')
     return redirect(url_for('subscription_page'))
 
 # ============ SELLER ROUTES ============
@@ -425,8 +386,6 @@ def seller_dashboard():
     try:
         seller = current_user
         products = Product.query.filter_by(seller_id=seller.id).all()
-        
-        # Check subscription status
         days_left = seller.get_subscription_days_left()
         has_active = seller.has_active_subscription()
         
@@ -436,8 +395,7 @@ def seller_dashboard():
                              has_active=has_active,
                              days_left=days_left)
     except Exception as e:
-        print(f"Seller dashboard error: {e}")
-        flash('Error loading dashboard', 'danger')
+        print(f"Error: {e}")
         return render_template('seller_dashboard.html', 
                              seller=current_user, 
                              products=[],
@@ -449,35 +407,39 @@ def seller_dashboard():
 @subscription_required
 def seller_add_product():
     if request.method == 'POST':
-        name = request.form.get('name')
-        price = request.form.get('price')
-        location = request.form.get('location')
-        
-        if not name or not price or not location:
-            flash('All fields required', 'danger')
-            return render_template('add_product.html', seller=current_user)
-        
-        product = Product(
-            name=name,
-            description=request.form.get('description'),
-            price=float(price),
-            location=location,
-            seller_id=current_user.id,
-            whatsapp_number=current_user.whatsapp_number,
-            category=request.form.get('category')
-        )
-        
-        if 'image' in request.files:
-            file = request.files['image']
-            if file and file.filename and allowed_file(file.filename):
-                filename = secure_filename(f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}")
-                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                product.image_filename = filename
-        
-        db.session.add(product)
-        db.session.commit()
-        flash('Product uploaded!', 'success')
-        return redirect(url_for('seller_dashboard'))
+        try:
+            name = request.form.get('name')
+            price = request.form.get('price')
+            location = request.form.get('location')
+            
+            if not name or not price or not location:
+                flash('All fields required', 'danger')
+                return render_template('add_product.html', seller=current_user)
+            
+            product = Product(
+                name=name,
+                description=request.form.get('description'),
+                price=float(price),
+                location=location,
+                seller_id=current_user.id,
+                whatsapp_number=current_user.whatsapp_number,
+                category=request.form.get('category')
+            )
+            
+            if 'image' in request.files:
+                file = request.files['image']
+                if file and file.filename and allowed_file(file.filename):
+                    filename = secure_filename(f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}")
+                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                    product.image_filename = filename
+            
+            db.session.add(product)
+            db.session.commit()
+            flash('Product uploaded!', 'success')
+            return redirect(url_for('seller_dashboard'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error: {str(e)}', 'danger')
     
     return render_template('add_product.html', seller=current_user)
 
@@ -502,23 +464,27 @@ def seller_edit_product(product_id):
         return redirect(url_for('seller_dashboard'))
     
     if request.method == 'POST':
-        product.name = request.form.get('name')
-        product.description = request.form.get('description')
-        product.price = float(request.form.get('price'))
-        product.location = request.form.get('location')
-        product.category = request.form.get('category')
-        product.is_available = request.form.get('is_available') == 'on'
-        
-        if 'image' in request.files:
-            file = request.files['image']
-            if file and file.filename and allowed_file(file.filename):
-                filename = secure_filename(f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}")
-                file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
-                product.image_filename = filename
-        
-        db.session.commit()
-        flash('Product updated!', 'success')
-        return redirect(url_for('seller_dashboard'))
+        try:
+            product.name = request.form.get('name')
+            product.description = request.form.get('description')
+            product.price = float(request.form.get('price'))
+            product.location = request.form.get('location')
+            product.category = request.form.get('category')
+            product.is_available = request.form.get('is_available') == 'on'
+            
+            if 'image' in request.files:
+                file = request.files['image']
+                if file and file.filename and allowed_file(file.filename):
+                    filename = secure_filename(f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}")
+                    file.save(os.path.join(app.config['UPLOAD_FOLDER'], filename))
+                    product.image_filename = filename
+            
+            db.session.commit()
+            flash('Product updated!', 'success')
+            return redirect(url_for('seller_dashboard'))
+        except Exception as e:
+            db.session.rollback()
+            flash(f'Error: {str(e)}', 'danger')
     
     return render_template('edit_product.html', product=product, seller=current_user)
 
@@ -533,24 +499,17 @@ def admin_dashboard():
     logs = VisitLog.query.order_by(VisitLog.timestamp.desc()).limit(20).all()
     payments = PaymentRequest.query.order_by(PaymentRequest.created_at.desc()).all()
     
-    # Statistics
-    total_sellers = User.query.filter_by(role='seller').count()
-    active_sellers = User.query.filter_by(role='seller', is_active=True).count()
-    total_products = Product.query.count()
-    total_visits = VisitLog.query.count()
-    pending_payments = PaymentRequest.query.filter_by(status='pending').count()
+    stats = {
+        'total_sellers': User.query.filter_by(role='seller').count(),
+        'active_sellers': User.query.filter_by(role='seller', is_active=True).count(),
+        'total_products': Product.query.count(),
+        'total_visits': VisitLog.query.count(),
+        'pending_payments': PaymentRequest.query.filter_by(status='pending').count()
+    }
     
     return render_template('admin_dashboard.html', 
-                         sellers=sellers, 
-                         admins=admins, 
-                         products=products,
-                         logs=logs,
-                         payments=payments,
-                         total_sellers=total_sellers,
-                         active_sellers=active_sellers,
-                         total_products=total_products,
-                         total_visits=total_visits,
-                         pending_payments=pending_payments)
+                         sellers=sellers, admins=admins, products=products,
+                         logs=logs, payments=payments, **stats)
 
 @app.route('/admin/seller/create', methods=['GET', 'POST'])
 @admin_required
@@ -692,7 +651,7 @@ def delete_admin(admin_id):
     flash('Admin deleted', 'danger')
     return redirect(url_for('admin_dashboard'))
 
-# ============ PAYMENT MANAGEMENT (ADMIN) ============
+# ============ PAYMENT MANAGEMENT ============
 
 @app.route('/admin/payments')
 @admin_required
@@ -707,7 +666,6 @@ def approve_payment(payment_id):
     seller = User.query.get(payment.seller_id)
     
     if seller:
-        # Activate subscription
         plan_durations = {
             'monthly': 30,
             'quarterly': 90,
@@ -745,91 +703,43 @@ def deny_payment(payment_id):
     flash('Payment denied.', 'warning')
     return redirect(url_for('manage_payments'))
 
-# ============ LOGS MANAGEMENT ============
+# ============ LOGS ============
 
 @app.route('/admin/logs')
 @admin_required
 def view_logs():
-    date_from = request.args.get('from')
-    date_to = request.args.get('to')
-    heard_from = request.args.get('heard_from')
-    
-    query = VisitLog.query
-    
-    if date_from:
-        try:
-            date_from_dt = datetime.strptime(date_from, '%Y-%m-%d')
-            query = query.filter(VisitLog.timestamp >= date_from_dt)
-        except:
-            pass
-    
-    if date_to:
-        try:
-            date_to_dt = datetime.strptime(date_to, '%Y-%m-%d') + timedelta(days=1)
-            query = query.filter(VisitLog.timestamp <= date_to_dt)
-        except:
-            pass
-    
-    if heard_from and heard_from != 'all':
-        query = query.filter(VisitLog.heard_from == heard_from)
-    
-    logs = query.order_by(VisitLog.timestamp.desc()).all()
-    
+    logs = VisitLog.query.order_by(VisitLog.timestamp.desc()).all()
     stats = {
         'total': VisitLog.query.count(),
         'internet': VisitLog.query.filter_by(heard_from='Internet').count(),
         'friend': VisitLog.query.filter_by(heard_from='Friend').count(),
         'research': VisitLog.query.filter_by(heard_from='Self Research').count()
     }
-    
-    return render_template('logs.html', logs=logs, stats=stats, 
-                         date_from=date_from, date_to=date_to, heard_from=heard_from)
+    return render_template('logs.html', logs=logs, stats=stats)
 
 @app.route('/admin/logs/download')
 @admin_required
 def download_logs():
-    date_from = request.args.get('from')
-    date_to = request.args.get('to')
-    
-    query = VisitLog.query
-    if date_from:
-        try:
-            query = query.filter(VisitLog.timestamp >= datetime.strptime(date_from, '%Y-%m-%d'))
-        except:
-            pass
-    if date_to:
-        try:
-            query = query.filter(VisitLog.timestamp <= datetime.strptime(date_to, '%Y-%m-%d') + timedelta(days=1))
-        except:
-            pass
-    
-    logs = query.all()
-    
+    logs = VisitLog.query.all()
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(['ID', 'IP Address', 'Heard From', 'Timestamp', 'User Agent'])
+    writer.writerow(['ID', 'IP', 'Heard From', 'Timestamp'])
     for log in logs:
-        writer.writerow([log.id, log.ip_address, log.heard_from, log.timestamp, log.user_agent])
-    
+        writer.writerow([log.id, log.ip_address, log.heard_from, log.timestamp])
     output.seek(0)
     return send_file(
         io.BytesIO(output.getvalue().encode('utf-8-sig')),
         mimetype='text/csv',
         as_attachment=True,
-        download_name=f'logs_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv'
+        download_name=f'logs_{datetime.now().strftime("%Y%m%d")}.csv'
     )
 
 @app.route('/admin/logs/delete', methods=['POST'])
 @admin_required
 def delete_logs():
-    try:
-        count = VisitLog.query.count()
-        VisitLog.query.delete()
-        db.session.commit()
-        flash(f'Deleted {count} log records', 'success')
-    except Exception as e:
-        db.session.rollback()
-        flash(f'Error: {str(e)}', 'danger')
+    VisitLog.query.delete()
+    db.session.commit()
+    flash('Logs deleted', 'success')
     return redirect(url_for('view_logs'))
 
 # ============ ERROR HANDLERS ============
