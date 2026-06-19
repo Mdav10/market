@@ -9,18 +9,54 @@
     <style>
         * { font-size: 16px; }
         body { background: #f5f7fa; }
-        .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 15px 0; }
+        .navbar {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            padding: 15px 0;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+        }
         .navbar-brand { font-size: 1.8rem; font-weight: 700; color: white !important; }
-        .stat-card { border: none; border-radius: 20px; padding: 20px; color: white; margin-bottom: 20px; }
+        .navbar .btn { border-radius: 50px; padding: 10px 25px; font-weight: 600; }
+        .stat-card {
+            border: none;
+            border-radius: 20px;
+            padding: 25px;
+            color: white;
+            margin-bottom: 20px;
+            transition: transform 0.3s ease;
+        }
+        .stat-card:hover { transform: translateY(-5px); }
         .stat-card .number { font-size: 2.5rem; font-weight: 700; }
         .stat-card .label { font-size: 1rem; opacity: 0.9; }
-        .dashboard-card { border: none; border-radius: 20px; box-shadow: 0 5px 20px rgba(0,0,0,0.08); background: white; margin-bottom: 25px; }
-        .dashboard-card .card-header { background: transparent; border-bottom: 2px solid #f0f0f0; padding: 20px 25px; font-weight: 700; font-size: 1.2rem; }
+        .stat-card .icon { font-size: 2.5rem; opacity: 0.3; float: right; }
+        .dashboard-card {
+            border: none;
+            border-radius: 20px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.08);
+            background: white;
+            margin-bottom: 25px;
+            overflow: hidden;
+        }
+        .dashboard-card .card-header {
+            background: transparent;
+            border-bottom: 2px solid #f0f0f0;
+            padding: 20px 25px;
+            font-weight: 700;
+            font-size: 1.2rem;
+        }
         .dashboard-card .card-body { padding: 25px; }
-        .btn-sm { border-radius: 12px; padding: 8px 15px; }
+        .btn-sm { border-radius: 12px; padding: 8px 15px; font-weight: 600; }
+        .table th { font-weight: 700; background: #f8f9fa; border-top: none; }
+        .status-badge { padding: 6px 15px; border-radius: 50px; font-weight: 600; font-size: 0.9rem; }
         @media (max-width: 768px) {
             .stat-card .number { font-size: 2rem; }
             .navbar-brand { font-size: 1.4rem; }
+            .dashboard-card .card-header { font-size: 1rem; padding: 15px 20px; }
+            .dashboard-card .card-body { padding: 15px; }
+        }
+        @media (max-width: 480px) {
+            .stat-card { padding: 15px; }
+            .stat-card .number { font-size: 1.5rem; }
+            .table { font-size: 0.8rem; }
         }
     </style>
 </head>
@@ -29,37 +65,141 @@
         <div class="container">
             <span class="navbar-brand"><i class="bi bi-shield-lock me-2"></i>MCM Market - Admin</span>
             <div>
-                <a href="{{ url_for('index') }}" class="btn btn-outline-light me-2"><i class="bi bi-eye me-1"></i>View Site</a>
-                <a href="{{ url_for('logout') }}" class="btn btn-danger"><i class="bi bi-box-arrow-right me-1"></i>Logout</a>
+                <a href="{{ url_for('index') }}" class="btn btn-outline-light me-2">
+                    <i class="bi bi-eye me-1"></i>View Site
+                </a>
+                <a href="{{ url_for('logout') }}" class="btn btn-danger">
+                    <i class="bi bi-box-arrow-right me-1"></i>Logout
+                </a>
             </div>
         </div>
     </nav>
 
     <div class="container mt-4">
+        {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+                {% for category, message in messages %}
+                    <div class="alert alert-{{ category }} alert-dismissible fade show">
+                        {{ message }}
+                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                    </div>
+                {% endfor %}
+            {% endif %}
+        {% endwith %}
+
         <!-- Statistics -->
         <div class="row">
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="stat-card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                    <div class="icon"><i class="bi bi-people"></i></div>
                     <div class="number">{{ total_sellers }}</div>
-                    <div class="label"><i class="bi bi-people me-1"></i>Total Sellers</div>
+                    <div class="label">Total Sellers</div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="stat-card" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%);">
+                    <div class="icon"><i class="bi bi-check-circle"></i></div>
                     <div class="number">{{ active_sellers }}</div>
-                    <div class="label"><i class="bi bi-check-circle me-1"></i>Active Sellers</div>
+                    <div class="label">Active Sellers</div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="stat-card" style="background: linear-gradient(135deg, #ffc107 0%, #ff9800 100%);">
+                    <div class="icon"><i class="bi bi-box-seam"></i></div>
                     <div class="number">{{ total_products }}</div>
-                    <div class="label"><i class="bi bi-box-seam me-1"></i>Total Products</div>
+                    <div class="label">Total Products</div>
                 </div>
             </div>
-            <div class="col-md-3">
+            <div class="col-6 col-md-3">
                 <div class="stat-card" style="background: linear-gradient(135deg, #dc3545 0%, #e74c3c 100%);">
-                    <div class="number">{{ total_visits }}</div>
-                    <div class="label"><i class="bi bi-eye me-1"></i>Total Visits</div>
+                    <div class="icon"><i class="bi bi-credit-card"></i></div>
+                    <div class="number">{{ pending_payments }}</div>
+                    <div class="label">Pending Payments</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Payment Requests -->
+        <div class="dashboard-card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-credit-card me-2"></i>Payment Requests</span>
+                <a href="{{ url_for('manage_payments') }}" class="btn btn-info btn-sm">
+                    <i class="bi bi-eye me-1"></i>Manage All
+                </a>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Seller</th>
+                                <th>Plan</th>
+                                <th>Amount</th>
+                                <th>Status</th>
+                                <th>Date</th>
+                                <th>Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% if payments %}
+                                {% for payment in payments[:5] %}
+                                <tr>
+                                    <td><strong>{{ payment.seller.shop_name }}</strong></td>
+                                    <td><span class="badge bg-info">{{ payment.plan|title }}</span></td>
+                                    <td><strong>${{ payment.amount }}</strong></td>
+                                    <td>
+                                        <span class="status-badge bg-{{ 'warning' if payment.status == 'pending' else 'success' if payment.status == 'approved' else 'danger' }}">
+                                            {{ payment.status|title }}
+                                        </span>
+                                    </td>
+                                    <td>{{ payment.created_at.strftime('%Y-%m-%d') }}</td>
+                                    <td>
+                                        {% if payment.status == 'pending' %}
+                                            <div class="btn-group btn-group-sm">
+                                                <form method="POST" action="{{ url_for('approve_payment', payment_id=payment.id) }}" style="display:inline;">
+                                                    <button type="submit" class="btn btn-success" onclick="return confirm('Approve this payment?')">
+                                                        <i class="bi bi-check"></i>
+                                                    </button>
+                                                </form>
+                                                <button class="btn btn-danger" data-bs-toggle="modal" data-bs-target="#denyModal{{ payment.id }}">
+                                                    <i class="bi bi-x"></i>
+                                                </button>
+                                            </div>
+                                        {% else %}
+                                            <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                </tr>
+
+                                <!-- Deny Modal -->
+                                <div class="modal fade" id="denyModal{{ payment.id }}" tabindex="-1">
+                                    <div class="modal-dialog">
+                                        <div class="modal-content">
+                                            <form method="POST" action="{{ url_for('deny_payment', payment_id=payment.id) }}">
+                                                <div class="modal-header">
+                                                    <h5 class="modal-title">Deny Payment</h5>
+                                                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                                </div>
+                                                <div class="modal-body">
+                                                    <p>Reason for denying this payment?</p>
+                                                    <textarea name="notes" class="form-control" rows="3" placeholder="Enter reason..."></textarea>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                                                    <button type="submit" class="btn btn-danger">Deny Payment</button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            {% else %}
+                                <tr>
+                                    <td colspan="6" class="text-center py-3 text-muted">No payment requests</td>
+                                </tr>
+                            {% endif %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -80,6 +220,7 @@
                                 <th>Shop</th>
                                 <th>WhatsApp</th>
                                 <th>Status</th>
+                                <th>Subscription</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
@@ -89,20 +230,27 @@
                                 <td><strong>{{ seller.shop_name }}</strong></td>
                                 <td>{{ seller.whatsapp_number }}</td>
                                 <td>
-                                    <span class="badge bg-{{ 'success' if seller.is_active else 'danger' }}">
+                                    <span class="status-badge bg-{{ 'success' if seller.is_active else 'danger' }}">
                                         {{ 'Active' if seller.is_active else 'Suspended' }}
                                     </span>
                                 </td>
                                 <td>
-                                    <a href="{{ url_for('edit_seller', seller_id=seller.id) }}" class="btn btn-warning btn-sm">
-                                        <i class="bi bi-pencil"></i>
-                                    </a>
-                                    <a href="{{ url_for('toggle_seller', seller_id=seller.id) }}" class="btn btn-sm btn-{{ 'danger' if seller.is_active else 'success' }}">
-                                        <i class="bi bi-{{ 'pause' if seller.is_active else 'play' }}"></i>
-                                    </a>
-                                    <a href="{{ url_for('delete_seller', seller_id=seller.id) }}" class="btn btn-danger btn-sm" onclick="return confirm('Delete this seller?')">
-                                        <i class="bi bi-trash"></i>
-                                    </a>
+                                    <span class="status-badge bg-{{ 'success' if seller.subscription_status == 'active' else 'warning' if seller.subscription_status == 'trial' else 'danger' }}">
+                                        {{ seller.subscription_status|title }}
+                                    </span>
+                                </td>
+                                <td>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{{ url_for('edit_seller', seller_id=seller.id) }}" class="btn btn-warning">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        <a href="{{ url_for('toggle_seller', seller_id=seller.id) }}" class="btn btn-{{ 'danger' if seller.is_active else 'success' }}">
+                                            <i class="bi bi-{{ 'pause' if seller.is_active else 'play' }}"></i>
+                                        </a>
+                                        <a href="{{ url_for('delete_seller', seller_id=seller.id) }}" class="btn btn-danger" onclick="return confirm('Delete this seller?')">
+                                            <i class="bi bi-trash"></i>
+                                        </a>
+                                    </div>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -135,17 +283,19 @@
                             <tr>
                                 <td><strong>{{ admin.username }}</strong></td>
                                 <td>
-                                    <span class="badge bg-{{ 'danger' if admin.is_super_admin else 'info' }}">
+                                    <span class="status-badge bg-{{ 'danger' if admin.is_super_admin else 'info' }}">
                                         {{ 'Super Admin' if admin.is_super_admin else 'Admin' }}
                                     </span>
                                 </td>
                                 <td>
-                                    <a href="{{ url_for('edit_admin', admin_id=admin.id) }}" class="btn btn-warning btn-sm">
-                                        <i class="bi bi-pencil"></i>
-                                    </a>
-                                    <a href="{{ url_for('delete_admin', admin_id=admin.id) }}" class="btn btn-danger btn-sm" onclick="return confirm('Delete this admin?')">
-                                        <i class="bi bi-trash"></i>
-                                    </a>
+                                    <div class="btn-group btn-group-sm">
+                                        <a href="{{ url_for('edit_admin', admin_id=admin.id) }}" class="btn btn-warning">
+                                            <i class="bi bi-pencil"></i>
+                                        </a>
+                                        <a href="{{ url_for('delete_admin', admin_id=admin.id) }}" class="btn btn-danger" onclick="return confirm('Delete this admin?')">
+                                            <i class="bi bi-trash"></i>
+                                        </a>
+                                    </div>
                                 </td>
                             </tr>
                             {% endfor %}
@@ -180,7 +330,7 @@
                                 <td>{{ product.location }}</td>
                                 <td>{{ product.seller.shop_name if product.seller else 'Unknown' }}</td>
                                 <td>
-                                    <span class="badge bg-{{ 'success' if product.is_available else 'danger' }}">
+                                    <span class="status-badge bg-{{ 'success' if product.is_available else 'danger' }}">
                                         {{ 'Available' if product.is_available else 'Unavailable' }}
                                     </span>
                                 </td>
@@ -196,7 +346,9 @@
         <div class="dashboard-card">
             <div class="card-header d-flex justify-content-between align-items-center">
                 <span><i class="bi bi-clock-history me-2"></i>Recent Visitor Logs</span>
-                <a href="{{ url_for('view_logs') }}" class="btn btn-info btn-sm">View All Logs</a>
+                <a href="{{ url_for('view_logs') }}" class="btn btn-info btn-sm">
+                    <i class="bi bi-eye me-1"></i>View All
+                </a>
             </div>
             <div class="card-body">
                 <div class="table-responsive">

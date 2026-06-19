@@ -59,6 +59,17 @@
         .info-item:last-child { border-bottom: none; }
         .info-label { font-weight: 600; color: #666; width: 140px; display: inline-block; }
         .info-value { color: #333; font-weight: 500; }
+        .subscription-alert {
+            border-radius: 15px;
+            padding: 20px;
+            margin-bottom: 25px;
+            border: none;
+        }
+        .subscription-alert .btn {
+            border-radius: 50px;
+            padding: 10px 25px;
+            font-weight: 600;
+        }
         @media (max-width: 768px) {
             .navbar-brand { font-size: 1.4rem; }
             .stat-number { font-size: 2rem; }
@@ -82,6 +93,9 @@
                 <i class="bi bi-shop me-2"></i>{{ seller.shop_name }}
             </span>
             <div class="d-flex gap-2">
+                <a href="{{ url_for('subscription_page') }}" class="btn btn-light">
+                    <i class="bi bi-credit-card me-1"></i> Subscription
+                </a>
                 <a href="{{ url_for('seller_add_product') }}" class="btn btn-light">
                     <i class="bi bi-plus-circle me-1"></i> Add Product
                 </a>
@@ -93,6 +107,39 @@
     </nav>
 
     <div class="container mt-4">
+        <!-- Subscription Status Alert -->
+        <div class="subscription-alert alert alert-{{ 'success' if has_active else 'warning' }}">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-{{ 'check-circle-fill' if has_active else 'exclamation-triangle-fill' }}" style="font-size: 2rem; margin-right: 15px;"></i>
+                        <div>
+                            <strong>{{ seller.shop_name }}</strong>
+                            {% if seller.subscription_status == 'trial' %}
+                                <span class="badge bg-info ms-2">Free Trial</span>
+                                <br>
+                                <small>{{ days_left }} days remaining in trial</small>
+                            {% elif seller.subscription_status == 'active' %}
+                                <span class="badge bg-success ms-2">Active</span>
+                                <br>
+                                <small>Active until {{ seller.subscription_end.strftime('%Y-%m-%d') }}</small>
+                            {% else %}
+                                <span class="badge bg-danger ms-2">Expired</span>
+                                <br>
+                                <small>Your subscription has expired</small>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4 text-end">
+                    <a href="{{ url_for('subscription_page') }}" class="btn btn-{{ 'primary' if has_active else 'warning' }}">
+                        <i class="bi bi-credit-card me-1"></i>
+                        {{ 'Manage Plan' if has_active else 'Renew Now' }}
+                    </a>
+                </div>
+            </div>
+        </div>
+
         <div class="row">
             <div class="col-md-4">
                 <div class="dashboard-card">
@@ -114,13 +161,21 @@
                         </div>
                         <div class="info-item">
                             <span class="info-label">Status:</span>
-                            <span class="badge bg-success" style="font-size:1rem; padding:8px 20px;">
-                                <i class="bi bi-check-circle me-1"></i> Active
+                            <span class="badge bg-{{ 'success' if seller.is_active else 'danger' }}" style="font-size:1rem; padding:8px 20px;">
+                                <i class="bi bi-{{ 'check-circle' if seller.is_active else 'x-circle' }} me-1"></i>
+                                {{ 'Active' if seller.is_active else 'Suspended' }}
                             </span>
                         </div>
                         <div class="info-item">
                             <span class="info-label">Products:</span>
                             <span class="info-value">{{ products|length }}</span>
+                        </div>
+                        <div class="info-item">
+                            <span class="info-label">Subscription:</span>
+                            <span class="badge bg-{{ 'success' if has_active else 'warning' }}" style="font-size:1rem; padding:8px 20px;">
+                                <i class="bi bi-{{ 'check-circle' if has_active else 'clock' }} me-1"></i>
+                                {{ 'Active' if has_active else 'Expired' }}
+                            </span>
                         </div>
                     </div>
                 </div>
@@ -130,9 +185,11 @@
                 <div class="dashboard-card">
                     <div class="card-header d-flex justify-content-between align-items-center">
                         <span><i class="bi bi-box-seam me-2"></i>My Products ({{ products|length }})</span>
-                        <a href="{{ url_for('seller_add_product') }}" class="btn btn-success btn-sm">
-                            <i class="bi bi-plus-circle me-1"></i> New
-                        </a>
+                        <div>
+                            <a href="{{ url_for('seller_add_product') }}" class="btn btn-success btn-sm me-2">
+                                <i class="bi bi-plus-circle me-1"></i> New
+                            </a>
+                        </div>
                     </div>
                     <div class="card-body">
                         {% if products %}
@@ -178,15 +235,22 @@
                                             </td>
                                             <td>
                                                 <div class="btn-group btn-group-sm">
-                                                    <a href="{{ url_for('seller_edit_product', product_id=product.id) }}" 
-                                                       class="btn btn-warning">
-                                                        <i class="bi bi-pencil"></i>
-                                                    </a>
-                                                    <a href="{{ url_for('seller_delete_product', product_id=product.id) }}" 
-                                                       class="btn btn-danger"
-                                                       onclick="return confirm('Delete this product?')">
-                                                        <i class="bi bi-trash"></i>
-                                                    </a>
+                                                    {% if has_active %}
+                                                        <a href="{{ url_for('seller_edit_product', product_id=product.id) }}" 
+                                                           class="btn btn-warning">
+                                                            <i class="bi bi-pencil"></i>
+                                                        </a>
+                                                        <a href="{{ url_for('seller_delete_product', product_id=product.id) }}" 
+                                                           class="btn btn-danger"
+                                                           onclick="return confirm('Delete this product?')">
+                                                            <i class="bi bi-trash"></i>
+                                                        </a>
+                                                    {% else %}
+                                                        <button class="btn btn-secondary" disabled>
+                                                            <i class="bi bi-lock"></i>
+                                                        </button>
+                                                        <small class="text-muted ms-2">Renew to edit</small>
+                                                    {% endif %}
                                                 </div>
                                             </td>
                                         </tr>
@@ -198,10 +262,16 @@
                             <div class="text-center py-5">
                                 <i class="bi bi-box-seam" style="font-size:4rem; color:#ccc;"></i>
                                 <h4 class="mt-3">No products yet</h4>
-                                <p class="text-muted">Click "Add Product" to start selling!</p>
-                                <a href="{{ url_for('seller_add_product') }}" class="btn btn-success">
-                                    <i class="bi bi-plus-circle me-1"></i> Add Your First Product
-                                </a>
+                                <p class="text-muted">Start selling by adding your first product!</p>
+                                {% if has_active %}
+                                    <a href="{{ url_for('seller_add_product') }}" class="btn btn-success">
+                                        <i class="bi bi-plus-circle me-1"></i> Add Product
+                                    </a>
+                                {% else %}
+                                    <a href="{{ url_for('subscription_page') }}" class="btn btn-warning">
+                                        <i class="bi bi-credit-card me-1"></i> Subscribe to Add Products
+                                    </a>
+                                {% endif %}
                             </div>
                         {% endif %}
                     </div>
