@@ -25,11 +25,14 @@ app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
 
 # Image upload
 UPLOAD_FOLDER = 'static/uploads'
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
+PAYMENT_FOLDER = 'static/payments'
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf'}
 app.config['UPLOAD_FOLDER'] = UPLOAD_FOLDER
+app.config['PAYMENT_FOLDER'] = PAYMENT_FOLDER
 app.config['MAX_CONTENT_LENGTH'] = 16 * 1024 * 1024
 
 os.makedirs(UPLOAD_FOLDER, exist_ok=True)
+os.makedirs(PAYMENT_FOLDER, exist_ok=True)
 
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
@@ -56,11 +59,55 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     suspended_at = db.Column(db.DateTime, nullable=True)
     
+    # Subscription fields
+    subscription_status = db.Column(db.String(20), default='trial')
+    trial_start = db.Column(db.DateTime, default=datetime.utcnow)
+    trial_end = db.Column(db.DateTime, default=lambda: datetime.utcnow() + timedelta(days=3))
+    subscription_start = db.Column(db.DateTime, nullable=True)
+    subscription_end = db.Column(db.DateTime, nullable=True)
+    subscription_plan = db.Column(db.String(20), nullable=True)
+    
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
     
     def check_password(self, password):
         return check_password_hash(self.password_hash, password)
+    
+    def has_active_subscription(self):
+        """Check if user has an active subscription or trial"""
+        if self.role == 'admin':
+            return True
+        
+        if self.subscription_status == 'trial':
+            if self.trial_end and datetime.utcnow() <= self.trial_end:
+                return True
+            else:
+                self.subscription_status = 'expired'
+                db.session.commit()
+                return False
+        
+        if self.subscription_status == 'active':
+            if self.subscription_end and datetime.utcnow() <= self.subscription_end:
+                return True
+            else:
+                self.subscription_status = 'expired'
+                db.session.commit()
+                return False
+        
+        return False
+    
+    def get_subscription_days_left(self):
+        """Get days left in subscription or trial"""
+        try:
+            if self.subscription_status == 'trial' and self.trial_end:
+                delta = self.trial_end - datetime.utcnow()
+                return max(0, delta.days)
+            elif self.subscription_status == 'active' and self.subscription_end:
+                delta = self.subscription_end - datetime.utcnow()
+                return max(0, delta.days)
+        except:
+            pass
+        return 0
 
 class Product(db.Model):
     __tablename__ = 'products'
@@ -88,26 +135,100 @@ class VisitLog(db.Model):
     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
     user_agent = db.Column(db.String(500))
 
-# ============ CREATE TABLES ============
+class PaymentRequest(db.Model):
+    __tablename__ = 'payment_requests'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    seller_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    plan = db.Column(db.String(20), nullable=False)
+    amount = db.Column(db.Float, nullable=False)
+    payment_proof = db.Column(db.String(500), nullable=False)
+    status = db.Column(db.String(20), default='pending')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    reviewed_at = db.Column(db.DateTime, nullable=True)
+    reviewed_by = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=True)
+    notes = db.Column(db.Text, nullable=True)
+    
+    seller = db.relationship('User', foreign_keys=[seller_id], backref='payment_requests')
+    reviewer = db.relationship('User', foreign_keys=[reviewed_by])
+
+# ============ CREATE TABLES AND MIGRATE ============
+
+def migrate_database():
+    """Add missing columns if they don't exist"""
+    with app.app_context():
+        try:
+            # Check if columns exist
+            from sqlalchemy import inspect
+            inspector = inspect(db.engine)
+            columns = [col['name'] for col in inspector.get_columns('users')]
+            
+            # Add missing columns
+            with db.engine.connect() as conn:
+                if 'subscription_status' not in columns:
+                    conn.execute('ALTER TABLE users ADD COLUMN subscription_status VARCHAR(20) DEFAULT \'trial\'')
+                    print("✅ Added subscription_status column")
+                
+                if 'trial_start' not in columns:
+                    conn.execute('ALTER TABLE users ADD COLUMN trial_start TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
+                    print("✅ Added trial_start column")
+                
+                if 'trial_end' not in columns:
+                    conn.execute('ALTER TABLE users ADD COLUMN trial_end TIMESTAMP')
+                    print("✅ Added trial_end column")
+                
+                if 'subscription_start' not in columns:
+                    conn.execute('ALTER TABLE users ADD COLUMN subscription_start TIMESTAMP')
+                    print("✅ Added subscription_start column")
+                
+                if 'subscription_end' not in columns:
+                    conn.execute('ALTER TABLE users ADD COLUMN subscription_end TIMESTAMP')
+                    print("✅ Added subscription_end column")
+                
+                if 'subscription_plan' not in columns:
+                    conn.execute('ALTER TABLE users ADD COLUMN subscription_plan VARCHAR(20)')
+                    print("✅ Added subscription_plan column")
+                
+                conn.commit()
+            
+            # Update existing admins
+            admin = User.query.filter_by(role='admin').first()
+            if admin:
+                admin.subscription_status = 'active'
+                db.session.commit()
+            
+            # Update existing sellers with trial
+            sellers = User.query.filter_by(role='seller').all()
+            for seller in sellers:
+                if not seller.trial_end:
+                    seller.trial_end = datetime.utcnow() + timedelta(days=3)
+                    seller.subscription_status = 'trial'
+            db.session.commit()
+            
+            print("✅ Database migration completed!")
+            
+        except Exception as e:
+            print(f"⚠️ Migration warning: {e}")
+            db.session.rollback()
 
 with app.app_context():
     db.create_all()
     print("✅ Database tables created!")
+    migrate_database()
     
-    # Create super admin only if none exists
+    # Create super admin if not exists
     if not User.query.filter_by(username='Mpc').first():
         admin = User(
             username='Mpc',
             role='admin',
             is_super_admin=True,
-            is_active=True
+            is_active=True,
+            subscription_status='active'
         )
         admin.set_password('08800Mpc!')
         db.session.add(admin)
         db.session.commit()
         print("✅ Super admin created!")
-    else:
-        print("✅ Super admin already exists")
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -139,6 +260,21 @@ def seller_required(f):
         if not current_user.is_active:
             flash('Your account has been suspended', 'danger')
             return redirect(url_for('logout'))
+        return f(*args, **kwargs)
+    return decorated
+
+def subscription_required(f):
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not current_user.is_authenticated:
+            flash('Please login first', 'danger')
+            return redirect(url_for('login'))
+        if current_user.role != 'seller':
+            return f(*args, **kwargs)
+        
+        if not current_user.has_active_subscription():
+            flash('Your subscription has expired. Please renew to continue.', 'warning')
+            return redirect(url_for('subscription_page'))
         return f(*args, **kwargs)
     return decorated
 
@@ -208,17 +344,109 @@ def search():
         products = Product.query.filter_by(is_available=True).all()
     return render_template('index.html', products=products, search_query=query)
 
+# ============ SUBSCRIPTION ROUTES ============
+
+@app.route('/subscription')
+@seller_required
+def subscription_page():
+    seller = current_user
+    plans = [
+        {'id': 'monthly', 'name': '1 Month', 'price': 10, 'duration': 30},
+        {'id': 'quarterly', 'name': '3 Months', 'price': 25, 'duration': 90},
+        {'id': 'semiannual', 'name': '6 Months', 'price': 50, 'duration': 180},
+        {'id': 'yearly', 'name': '1 Year', 'price': 100, 'duration': 365}
+    ]
+    
+    payment_info = {
+        'bank': 'MCM Bank',
+        'account_name': 'MCM Market',
+        'account_number': '1234567890',
+        'mobile_money': '+256 123 456 789',
+        'reference': f'MCM-{seller.id}-{datetime.now().strftime("%Y%m%d")}'
+    }
+    
+    return render_template('subscription.html', 
+                         seller=seller, 
+                         plans=plans, 
+                         payment_info=payment_info)
+
+@app.route('/subscription/submit', methods=['POST'])
+@seller_required
+def submit_payment():
+    seller = current_user
+    plan = request.form.get('plan')
+    
+    plans = {
+        'monthly': 10,
+        'quarterly': 25,
+        'semiannual': 50,
+        'yearly': 100
+    }
+    
+    if plan not in plans:
+        flash('Invalid plan selected', 'danger')
+        return redirect(url_for('subscription_page'))
+    
+    if 'payment_proof' not in request.files:
+        flash('Please upload payment proof', 'danger')
+        return redirect(url_for('subscription_page'))
+    
+    file = request.files['payment_proof']
+    if file.filename == '':
+        flash('Please select a file', 'danger')
+        return redirect(url_for('subscription_page'))
+    
+    if file and allowed_file(file.filename):
+        filename = secure_filename(f"payment_{seller.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}_{file.filename}")
+        filepath = os.path.join(app.config['PAYMENT_FOLDER'], filename)
+        file.save(filepath)
+        
+        payment = PaymentRequest(
+            seller_id=seller.id,
+            plan=plan,
+            amount=plans[plan],
+            payment_proof=filename,
+            status='pending'
+        )
+        db.session.add(payment)
+        db.session.commit()
+        
+        flash('Payment submitted for review! We will notify you once approved.', 'success')
+        return redirect(url_for('seller_dashboard'))
+    
+    flash('Invalid file type. Please upload an image or PDF.', 'danger')
+    return redirect(url_for('subscription_page'))
+
 # ============ SELLER ROUTES ============
 
 @app.route('/seller/dashboard')
 @seller_required
 def seller_dashboard():
-    seller = current_user
-    products = Product.query.filter_by(seller_id=seller.id).all()
-    return render_template('seller_dashboard.html', seller=seller, products=products)
+    try:
+        seller = current_user
+        products = Product.query.filter_by(seller_id=seller.id).all()
+        
+        # Check subscription status
+        days_left = seller.get_subscription_days_left()
+        has_active = seller.has_active_subscription()
+        
+        return render_template('seller_dashboard.html', 
+                             seller=seller, 
+                             products=products,
+                             has_active=has_active,
+                             days_left=days_left)
+    except Exception as e:
+        print(f"Seller dashboard error: {e}")
+        flash('Error loading dashboard', 'danger')
+        return render_template('seller_dashboard.html', 
+                             seller=current_user, 
+                             products=[],
+                             has_active=False,
+                             days_left=0)
 
 @app.route('/seller/product/add', methods=['GET', 'POST'])
 @seller_required
+@subscription_required
 def seller_add_product():
     if request.method == 'POST':
         name = request.form.get('name')
@@ -255,6 +483,7 @@ def seller_add_product():
 
 @app.route('/seller/product/<int:product_id>/delete')
 @seller_required
+@subscription_required
 def seller_delete_product(product_id):
     product = Product.query.get_or_404(product_id)
     if product.seller_id == current_user.id:
@@ -265,6 +494,7 @@ def seller_delete_product(product_id):
 
 @app.route('/seller/product/<int:product_id>/edit', methods=['GET', 'POST'])
 @seller_required
+@subscription_required
 def seller_edit_product(product_id):
     product = Product.query.get_or_404(product_id)
     if product.seller_id != current_user.id:
@@ -301,22 +531,26 @@ def admin_dashboard():
     admins = User.query.filter_by(role='admin').all()
     products = Product.query.all()
     logs = VisitLog.query.order_by(VisitLog.timestamp.desc()).limit(20).all()
+    payments = PaymentRequest.query.order_by(PaymentRequest.created_at.desc()).all()
     
     # Statistics
     total_sellers = User.query.filter_by(role='seller').count()
     active_sellers = User.query.filter_by(role='seller', is_active=True).count()
     total_products = Product.query.count()
     total_visits = VisitLog.query.count()
+    pending_payments = PaymentRequest.query.filter_by(status='pending').count()
     
     return render_template('admin_dashboard.html', 
                          sellers=sellers, 
                          admins=admins, 
                          products=products,
                          logs=logs,
+                         payments=payments,
                          total_sellers=total_sellers,
                          active_sellers=active_sellers,
                          total_products=total_products,
-                         total_visits=total_visits)
+                         total_visits=total_visits,
+                         pending_payments=pending_payments)
 
 @app.route('/admin/seller/create', methods=['GET', 'POST'])
 @admin_required
@@ -337,12 +571,15 @@ def create_seller():
             shop_name=shop_name,
             whatsapp_number=whatsapp,
             email=request.form.get('email'),
-            is_active=True
+            is_active=True,
+            subscription_status='trial',
+            trial_start=datetime.utcnow(),
+            trial_end=datetime.utcnow() + timedelta(days=3)
         )
         seller.set_password(password)
         db.session.add(seller)
         db.session.commit()
-        flash('Seller created!', 'success')
+        flash('Seller created with 3-day free trial!', 'success')
         return redirect(url_for('admin_dashboard'))
     
     return render_template('create_seller.html')
@@ -381,7 +618,6 @@ def toggle_seller(seller_id):
 @admin_required
 def delete_seller(seller_id):
     seller = User.query.get_or_404(seller_id)
-    # Delete seller's products first
     Product.query.filter_by(seller_id=seller_id).delete()
     db.session.delete(seller)
     db.session.commit()
@@ -408,7 +644,8 @@ def create_admin():
             username=username,
             role='admin',
             is_super_admin=is_super,
-            is_active=True
+            is_active=True,
+            subscription_status='active'
         )
         admin.set_password(password)
         db.session.add(admin)
@@ -454,6 +691,59 @@ def delete_admin(admin_id):
     db.session.commit()
     flash('Admin deleted', 'danger')
     return redirect(url_for('admin_dashboard'))
+
+# ============ PAYMENT MANAGEMENT (ADMIN) ============
+
+@app.route('/admin/payments')
+@admin_required
+def manage_payments():
+    payments = PaymentRequest.query.order_by(PaymentRequest.created_at.desc()).all()
+    return render_template('manage_payments.html', payments=payments)
+
+@app.route('/admin/payment/<int:payment_id>/approve', methods=['POST'])
+@admin_required
+def approve_payment(payment_id):
+    payment = PaymentRequest.query.get_or_404(payment_id)
+    seller = User.query.get(payment.seller_id)
+    
+    if seller:
+        # Activate subscription
+        plan_durations = {
+            'monthly': 30,
+            'quarterly': 90,
+            'semiannual': 180,
+            'yearly': 365
+        }
+        
+        duration = plan_durations.get(payment.plan, 30)
+        seller.subscription_status = 'active'
+        seller.subscription_start = datetime.utcnow()
+        seller.subscription_end = datetime.utcnow() + timedelta(days=duration)
+        seller.subscription_plan = payment.plan
+        
+        payment.status = 'approved'
+        payment.reviewed_at = datetime.utcnow()
+        payment.reviewed_by = current_user.id
+        
+        db.session.commit()
+        flash('Payment approved! Subscription activated.', 'success')
+    else:
+        flash('Seller not found', 'danger')
+    
+    return redirect(url_for('manage_payments'))
+
+@app.route('/admin/payment/<int:payment_id>/deny', methods=['POST'])
+@admin_required
+def deny_payment(payment_id):
+    payment = PaymentRequest.query.get_or_404(payment_id)
+    payment.status = 'denied'
+    payment.reviewed_at = datetime.utcnow()
+    payment.reviewed_by = current_user.id
+    payment.notes = request.form.get('notes', 'Payment verification failed.')
+    
+    db.session.commit()
+    flash('Payment denied.', 'warning')
+    return redirect(url_for('manage_payments'))
 
 # ============ LOGS MANAGEMENT ============
 
