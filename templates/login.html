@@ -20,6 +20,8 @@
         .divider::before, .divider::after { content: ''; flex: 1; border-bottom: 2px solid #e0e0e0; }
         .divider span { padding: 0 15px; color: #999; font-weight: 600; }
         .request-section { background: #f8f9fa; border-radius: 15px; padding: 20px; margin-top: 15px; }
+        .admin-hint { font-size: 0.8rem; color: #ccc; text-align: center; margin-top: 20px; user-select: none; }
+        .admin-hint:hover { color: #999; }
         @media (max-width: 768px) { .login-card { padding: 25px; margin: 15px; } }
     </style>
 </head>
@@ -40,7 +42,6 @@
             
             <!-- Admin/Seller Login -->
             <form method="POST">
-                <input type="hidden" name="username" value="admin_login">
                 <div class="mb-3">
                     <label class="form-label fw-bold">Username</label>
                     <input type="text" name="username" class="form-control" placeholder="Enter username" required>
@@ -68,7 +69,14 @@
                 </form>
             </div>
 
-            <div class="text-center mt-4"><a href="{{ url_for('index') }}" class="text-decoration-none"><i class="bi bi-arrow-left"></i> Back to Market</a></div>
+            <div class="text-center mt-4">
+                <a href="{{ url_for('index') }}" class="text-decoration-none"><i class="bi bi-arrow-left"></i> Back to Market</a>
+            </div>
+            
+            <!-- Hidden admin hint (only visible on hover) -->
+            <div class="admin-hint">
+                <small>🔒 Admin access at /admin</small>
+            </div>
         </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
