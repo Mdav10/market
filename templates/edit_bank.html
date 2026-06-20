@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Bank Details - MCM Market</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
+    <style>
+        body { background: #f5f7fa; font-size: 16px; }
+        .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 15px 0; }
+        .navbar-brand { font-size: 1.8rem; font-weight: 700; color: white !important; }
+        .form-card { border: none; border-radius: 25px; box-shadow: 0 10px 40px rgba(0,0,0,0.08); background: white; padding: 30px; }
+        .form-control { border-radius: 15px; padding: 14px 20px; font-size: 1rem; border: 2px solid #e0e0e0; }
+        .form-control:focus { border-color: #667eea; box-shadow: 0 0 0 0.2rem rgba(102, 126, 234, 0.25); }
+        .btn-submit { border-radius: 15px; padding: 14px; font-size: 1.1rem; font-weight: 600; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; color: white; width: 100%; }
+        .btn-submit:hover { transform: translateY(-2px); box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4); color: white; }
+        .form-label { font-weight: 600; }
+    </style>
+</head>
+<body>
+    <nav class="navbar"><div class="container"><span class="navbar-brand"><i class="bi bi-bank me-2"></i>Edit Bank Details</span>
+        <a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline-light"><i class="bi bi-arrow-left me-1"></i>Dashboard</a>
+    </div></nav>
+    <div class="container mt-4">
+        <div class="row justify-content-center">
+            <div class="col-md-8">
+                <div class="form-card">
+                    <h4 class="mb-4"><i class="bi bi-pencil-square me-2"></i>Update Payment Details</h4>
+                    <p class="text-muted">These details will be shown to sellers when they want to subscribe.</p>
+                    <form method="POST">
+                        <div class="mb-3">
+                            <label class="form-label">Bank Name</label>
+                            <input type="text" name="bank_name" class="form-control" value="{{ bank.bank_name }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Account Name</label>
+                            <input type="text" name="account_name" class="form-control" value="{{ bank.account_name }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Account Number</label>
+                            <input type="text" name="account_number" class="form-control" value="{{ bank.account_number }}" required>
+                        </div>
+                        <div class="mb-4">
+                            <label class="form-label">Mobile Money Number</label>
+                            <input type="text" name="mobile_money" class="form-control" value="{{ bank.mobile_money }}" required>
+                        </div>
+                        <button type="submit" class="btn-submit"><i class="bi bi-save me-2"></i>Save Changes</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

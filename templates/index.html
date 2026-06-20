@@ -3,254 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MCM Market - Buy & Sell</title>
+    <title>MCM Market</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.8.1/font/bootstrap-icons.css">
     <style>
-        * {
-            font-size: 16px;
-        }
-        body {
-            background: #f5f7fa;
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        }
-        .navbar {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            padding: 15px 0;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        .navbar-brand {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: white !important;
-        }
-        .navbar .btn {
-            font-size: 1rem;
-            padding: 10px 20px;
-            border-radius: 50px;
-            font-weight: 600;
-        }
-        .search-section {
-            background: white;
-            padding: 25px 0;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.05);
-            margin-bottom: 30px;
-        }
-        .search-box {
-            border-radius: 50px;
-            padding: 16px 25px;
-            font-size: 1.1rem;
-            border: 2px solid #e0e0e0;
-            transition: all 0.3s ease;
-        }
-        .search-box:focus {
-            border-color: #667eea;
-            box-shadow: 0 0 0 0.3rem rgba(102, 126, 234, 0.15);
-        }
-        .search-btn {
-            border-radius: 50px;
-            padding: 16px 35px;
-            font-size: 1.1rem;
-            font-weight: 600;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            border: none;
-        }
-        .search-btn:hover {
-            transform: scale(1.02);
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.3);
-        }
-        .product-card {
-            border: none;
-            border-radius: 20px;
-            overflow: hidden;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.08);
-            transition: all 0.3s ease;
-            height: 100%;
-            background: white;
-            margin-bottom: 25px;
-        }
-        .product-card:hover {
-            transform: translateY(-8px);
-            box-shadow: 0 15px 40px rgba(0,0,0,0.12);
-        }
-        .product-image {
-            width: 100%;
-            height: 250px;
-            object-fit: cover;
-            background: #f0f0f0;
-        }
-        .product-image-placeholder {
-            width: 100%;
-            height: 250px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: linear-gradient(135deg, #f0f4ff 0%, #e8edff 100%);
-            font-size: 4rem;
-            color: #667eea;
-        }
-        .product-body {
-            padding: 20px;
-        }
-        .product-title {
-            font-size: 1.3rem;
-            font-weight: 700;
-            color: #333;
-            margin-bottom: 8px;
-        }
-        .product-price {
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: #28a745;
-        }
-        .product-location {
-            font-size: 1rem;
-            color: #666;
-        }
-        .product-shop {
-            font-size: 1rem;
-            color: #666;
-            font-weight: 600;
-        }
-        .whatsapp-btn {
-            border-radius: 50px;
-            padding: 14px;
-            font-size: 1.1rem;
-            font-weight: 600;
-            background: #25D366;
-            color: white;
-            border: none;
-            transition: all 0.3s ease;
-        }
-        .whatsapp-btn:hover {
-            background: #128C7E;
-            color: white;
-            transform: scale(1.02);
-        }
-        .whatsapp-btn i {
-            font-size: 1.3rem;
-        }
-        .heard-modal .modal-content {
-            border-radius: 25px;
-            border: none;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-        }
-        .heard-modal .modal-title {
-            font-size: 1.8rem;
-            font-weight: 700;
-            color: white;
-        }
-        .heard-modal .modal-body p {
-            font-size: 1.2rem;
-            color: white;
-        }
-        .heard-modal .btn-light {
-            border-radius: 50px;
-            padding: 16px;
-            font-size: 1.2rem;
-            font-weight: 600;
-            transition: all 0.3s ease;
-        }
-        .heard-modal .btn-light:hover {
-            transform: scale(1.05);
-            box-shadow: 0 5px 20px rgba(0,0,0,0.2);
-        }
-        .no-products {
-            text-align: center;
-            padding: 60px 20px;
-            background: white;
-            border-radius: 20px;
-            box-shadow: 0 5px 20px rgba(0,0,0,0.05);
-        }
-        .no-products i {
-            font-size: 5rem;
-            color: #667eea;
-        }
-        .no-products h3 {
-            font-size: 1.8rem;
-            margin-top: 20px;
-            color: #333;
-        }
-        .no-products p {
-            font-size: 1.1rem;
-            color: #666;
-        }
-        .section-title {
-            font-size: 2rem;
-            font-weight: 700;
-            color: #333;
-            margin-bottom: 30px;
-        }
-        .badge-category {
-            font-size: 0.9rem;
-            padding: 6px 15px;
-            border-radius: 50px;
-            background: #667eea;
-            color: white;
-        }
+        body { background: #f5f7fa; font-size: 16px; }
+        .navbar { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 15px 0; }
+        .navbar-brand { font-size: 1.8rem; font-weight: 700; color: white !important; }
+        .product-card { border: none; border-radius: 20px; overflow: hidden; box-shadow: 0 5px 20px rgba(0,0,0,0.08); transition: all 0.3s ease; height: 100%; background: white; cursor: pointer; }
+        .product-card:hover { transform: translateY(-8px); box-shadow: 0 15px 40px rgba(0,0,0,0.12); }
+        .product-image { width: 100%; height: 200px; object-fit: cover; background: #f0f0f0; }
+        .product-body { padding: 20px; }
+        .product-title { font-size: 1.2rem; font-weight: 700; color: #333; }
+        .product-title:hover { color: #667eea; }
+        .product-price { font-size: 1.3rem; font-weight: 700; color: #28a745; }
+        .whatsapp-btn { border-radius: 50px; padding: 12px; font-weight: 600; background: #25D366; color: white; border: none; }
+        .whatsapp-btn:hover { background: #128C7E; color: white; }
+        .search-box { border-radius: 50px; padding: 14px 20px; border: 2px solid #e0e0e0; }
+        .search-btn { border-radius: 50px; padding: 14px 30px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); border: none; color: white; font-weight: 600; }
+        .heard-modal .modal-content { border-radius: 25px; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; }
+        .product-link { text-decoration: none; color: inherit; }
         @media (max-width: 768px) {
-            .navbar-brand {
-                font-size: 1.4rem;
-            }
-            .navbar .btn {
-                font-size: 0.9rem;
-                padding: 8px 15px;
-            }
-            .search-box {
-                font-size: 1rem;
-                padding: 14px 18px;
-            }
-            .search-btn {
-                font-size: 1rem;
-                padding: 14px 20px;
-            }
-            .product-title {
-                font-size: 1.1rem;
-            }
-            .product-price {
-                font-size: 1.2rem;
-            }
-            .product-image {
-                height: 200px;
-            }
-            .product-image-placeholder {
-                height: 200px;
-                font-size: 3rem;
-            }
-            .section-title {
-                font-size: 1.6rem;
-            }
-            .heard-modal .modal-title {
-                font-size: 1.4rem;
-            }
-            .heard-modal .btn-light {
-                font-size: 1rem;
-                padding: 14px;
-            }
-        }
-        @media (max-width: 480px) {
-            .navbar-brand {
-                font-size: 1.2rem;
-            }
-            .product-image {
-                height: 180px;
-            }
-            .product-image-placeholder {
-                height: 180px;
-                font-size: 2.5rem;
-            }
-            .product-body {
-                padding: 15px;
-            }
-            .whatsapp-btn {
-                font-size: 1rem;
-                padding: 12px;
-            }
+            .navbar-brand { font-size: 1.4rem; }
+            .product-image { height: 150px; }
         }
     </style>
 </head>
 <body>
-    <!-- Heard From Modal -->
     <div class="modal fade heard-modal" id="heardModal" tabindex="-1" data-bs-backdrop="static">
         <div class="modal-dialog modal-dialog-centered">
             <div class="modal-content">
@@ -258,18 +37,12 @@
                     <h5 class="modal-title">👋 Welcome to MCM Market!</h5>
                 </div>
                 <div class="modal-body">
-                    <p class="mb-3">How did you hear about us?</p>
-                    <form action="{{ url_for('heard_from') }}" method="POST" id="heardForm">
-                        <div class="d-grid gap-3">
-                            <button type="submit" name="heard_from" value="Internet" class="btn btn-light">
-                                <i class="bi bi-globe me-2"></i> Internet
-                            </button>
-                            <button type="submit" name="heard_from" value="Friend" class="btn btn-light">
-                                <i class="bi bi-people me-2"></i> Friend
-                            </button>
-                            <button type="submit" name="heard_from" value="Self Research" class="btn btn-light">
-                                <i class="bi bi-search me-2"></i> Self Research
-                            </button>
+                    <p>How did you hear about us?</p>
+                    <form action="{{ url_for('heard_from') }}" method="POST">
+                        <div class="d-grid gap-2">
+                            <button type="submit" name="heard_from" value="Internet" class="btn btn-light">🌐 Internet</button>
+                            <button type="submit" name="heard_from" value="Friend" class="btn btn-light">👫 Friend</button>
+                            <button type="submit" name="heard_from" value="Self Research" class="btn btn-light">🔍 Self Research</button>
                         </div>
                     </form>
                 </div>
@@ -277,78 +50,44 @@
         </div>
     </div>
 
-    <!-- Navigation -->
-    <nav class="navbar navbar-expand-lg">
+    <nav class="navbar">
         <div class="container">
-            <a class="navbar-brand" href="/">
-                <i class="bi bi-shop me-2"></i>MCM Market
-            </a>
-            <div class="d-flex gap-2">
-                <a href="{{ url_for('login') }}" class="btn btn-outline-light">
-                    <i class="bi bi-box-arrow-in-right me-1"></i> Login
-                </a>
+            <a class="navbar-brand" href="/">🛒 MCM Market</a>
+            <div>
+                <a href="{{ url_for('login') }}" class="btn btn-outline-light"><i class="bi bi-box-arrow-in-right me-1"></i>Login</a>
             </div>
         </div>
     </nav>
 
-    <!-- Search Section -->
-    <div class="search-section">
-        <div class="container">
-            <form action="{{ url_for('search') }}" method="GET" class="row g-2">
-                <div class="col-10 col-md-10">
-                    <input type="text" name="q" class="form-control search-box" 
-                           placeholder="🔍 Search products..." 
-                           value="{{ search_query if search_query else '' }}">
-                </div>
-                <div class="col-2 col-md-2">
-                    <button type="submit" class="btn search-btn text-white w-100">
-                        <i class="bi bi-search"></i>
-                    </button>
-                </div>
-            </form>
+    <div class="container mt-4">
+        <div class="row mb-4">
+            <div class="col-12">
+                <form action="{{ url_for('search') }}" method="GET" class="d-flex gap-2">
+                    <input type="text" name="q" class="form-control search-box" placeholder="🔍 Search products..." value="{{ search_query if search_query else '' }}">
+                    <button type="submit" class="search-btn">Search</button>
+                </form>
+            </div>
         </div>
-    </div>
 
-    <!-- Products Section -->
-    <div class="container">
-        <h2 class="section-title">
-            {% if search_query %}
-                Results for "{{ search_query }}"
-            {% else %}
-                🛍️ Available Products
-            {% endif %}
-        </h2>
-        
+        <h2 class="mb-4">🛍️ Available Products</h2>
         <div class="row">
             {% if products %}
                 {% for product in products %}
-                <div class="col-6 col-md-4 col-lg-3">
-                    <div class="product-card">
-                        {% if product.image_filename %}
-                            <img src="{{ url_for('static', filename='uploads/' + product.image_filename) }}" 
-                                 class="product-image" alt="{{ product.name }}">
-                        {% else %}
-                            <div class="product-image-placeholder">
-                                <i class="bi bi-image"></i>
-                            </div>
-                        {% endif %}
+                <div class="col-6 col-md-4 col-lg-3 mb-4">
+                    <div class="product-card" onclick="window.location.href='{{ url_for('product_detail', product_id=product.id) }}'">
+                        <img src="{{ url_for('static', filename='uploads/' + product.image_filename) if product.image_filename else 'https://via.placeholder.com/300x200?text=No+Image' }}" 
+                             class="product-image" alt="{{ product.name }}">
                         <div class="product-body">
                             <h5 class="product-title">{{ product.name }}</h5>
                             <p class="product-price">💰 {{ product.price|int }} FCFA</p>
-                            <p class="product-location">
-                                <i class="bi bi-geo-alt me-1"></i> {{ product.location }}
-                            </p>
-                            <p class="product-shop">
-                                <i class="bi bi-shop me-1"></i> {{ product.seller.shop_name }}
-                            </p>
+                            <p><i class="bi bi-geo-alt"></i> {{ product.location }}</p>
+                            <p><small><i class="bi bi-shop"></i> {{ product.seller.shop_name }}</small></p>
                             {% if product.category %}
-                                <span class="badge-category">{{ product.category }}</span>
+                                <span class="badge bg-info">{{ product.category }}</span>
                             {% endif %}
                             <div class="mt-3">
-                                <a href="https://wa.me/{{ product.whatsapp_number }}" 
-                                   target="_blank" 
-                                   class="btn whatsapp-btn w-100">
-                                    <i class="bi bi-whatsapp me-2"></i> Contact
+                                <a href="https://wa.me/{{ product.whatsapp_number }}" target="_blank" class="btn whatsapp-btn w-100" onclick="event.stopPropagation();">
+                                    <i class="bi bi-whatsapp"></i> Contact
                                 </a>
                             </div>
                         </div>
@@ -356,12 +95,9 @@
                 </div>
                 {% endfor %}
             {% else %}
-                <div class="col-12">
-                    <div class="no-products">
-                        <i class="bi bi-box-seam"></i>
-                        <h3>No Products Available</h3>
-                        <p>Check back later for new listings from our sellers!</p>
-                    </div>
+                <div class="col-12 text-center py-5">
+                    <h3>No products available</h3>
+                    <p>Check back later!</p>
                 </div>
             {% endif %}
         </div>
@@ -369,14 +105,10 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // Show modal on first visit
-        document.addEventListener('DOMContentLoaded', function() {
-            if (!sessionStorage.getItem('heardModalShown')) {
-                var modal = new bootstrap.Modal(document.getElementById('heardModal'));
-                modal.show();
-                sessionStorage.setItem('heardModalShown', 'true');
-            }
-        });
+        if (!sessionStorage.getItem('heardModalShown')) {
+            new bootstrap.Modal(document.getElementById('heardModal')).show();
+            sessionStorage.setItem('heardModalShown', 'true');
+        }
     </script>
 </body>
 </html>

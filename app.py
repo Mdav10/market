@@ -13,7 +13,7 @@ warnings.filterwarnings('ignore')
 
 app = Flask(__name__)
 
-# Configuration - Using SQLite
+# Configuration
 app.config['SECRET_KEY'] = 'mcm_market_secret_key_2026'
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///mcm_market.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
@@ -130,6 +130,25 @@ class PaymentRequest(db.Model):
     seller = db.relationship('User', foreign_keys=[seller_id], backref='payment_requests')
     reviewer = db.relationship('User', foreign_keys=[reviewed_by])
 
+class SellerRequest(db.Model):
+    __tablename__ = 'seller_requests'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    whatsapp_number = db.Column(db.String(20), nullable=False)
+    status = db.Column(db.String(20), default='pending')  # pending, contacted
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    notes = db.Column(db.Text)
+
+class BankDetails(db.Model):
+    __tablename__ = 'bank_details'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    bank_name = db.Column(db.String(100), default='MCM Bank')
+    account_name = db.Column(db.String(100), default='MCM Market')
+    account_number = db.Column(db.String(50), default='1234567890')
+    mobile_money = db.Column(db.String(50), default='+256 123 456 789')
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
 # ============ CREATE TABLES ============
 
 with app.app_context():
@@ -149,6 +168,13 @@ with app.app_context():
         db.session.add(admin)
         db.session.commit()
         print("✅ Super admin created!")
+    
+    # Create default bank details
+    if not BankDetails.query.first():
+        bank = BankDetails()
+        db.session.add(bank)
+        db.session.commit()
+        print("✅ Bank details created!")
 
 @login_manager.user_loader
 def load_user(user_id):
@@ -168,6 +194,16 @@ def admin_required(f):
         if current_user.role != 'admin':
             flash('Admin access required', 'danger')
             return redirect(url_for('index'))
+        return f(*args, **kwargs)
+    return decorated
+
+def super_admin_required(f):
+    @wraps(f)
+    @admin_required
+    def decorated(*args, **kwargs):
+        if not current_user.is_super_admin:
+            flash('Super admin privileges required', 'danger')
+            return redirect(url_for('admin_dashboard'))
         return f(*args, **kwargs)
     return decorated
 
@@ -207,6 +243,14 @@ def index():
     products = Product.query.filter_by(is_available=True).all()
     return render_template('index.html', products=products)
 
+@app.route('/product/<int:product_id>')
+def product_detail(product_id):
+    product = Product.query.get_or_404(product_id)
+    if not product.is_available or not product.seller.is_active:
+        flash('Product not available', 'warning')
+        return redirect(url_for('index'))
+    return render_template('product_detail.html', product=product)
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if current_user.is_authenticated:
@@ -217,6 +261,18 @@ def login():
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
+        
+        # Check if it's a seller request
+        if username == 'seller_request':
+            whatsapp = request.form.get('whatsapp')
+            if whatsapp:
+                request_obj = SellerRequest(whatsapp_number=whatsapp)
+                db.session.add(request_obj)
+                db.session.commit()
+                flash('Your request has been sent! Admin will contact you on WhatsApp.', 'success')
+                return redirect(url_for('index'))
+            flash('Please enter your WhatsApp number', 'danger')
+            return render_template('login.html')
         
         user = User.query.filter_by(username=username).first()
         if user and user.check_password(password):
@@ -272,19 +328,27 @@ def search():
 @seller_required
 def subscription_page():
     seller = current_user
+    bank = BankDetails.query.first()
+    if not bank:
+        bank = BankDetails()
+        db.session.add(bank)
+        db.session.commit()
+    
     plans = [
         {'id': 'monthly', 'name': '1 Month', 'price': 10, 'duration': 30},
         {'id': 'quarterly', 'name': '3 Months', 'price': 25, 'duration': 90},
         {'id': 'semiannual', 'name': '6 Months', 'price': 50, 'duration': 180},
         {'id': 'yearly', 'name': '1 Year', 'price': 100, 'duration': 365}
     ]
+    
     payment_info = {
-        'bank': 'MCM Bank',
-        'account_name': 'MCM Market',
-        'account_number': '1234567890',
-        'mobile_money': '+256 123 456 789',
+        'bank': bank.bank_name,
+        'account_name': bank.account_name,
+        'account_number': bank.account_number,
+        'mobile_money': bank.mobile_money,
         'reference': f'MCM-{seller.id}-{datetime.now().strftime("%Y%m%d")}'
     }
+    
     return render_template('subscription.html', seller=seller, plans=plans, payment_info=payment_info)
 
 @app.route('/subscription/submit', methods=['POST'])
@@ -428,24 +492,69 @@ def seller_edit_product(product_id):
 def admin_dashboard():
     sellers = User.query.filter_by(role='seller').all()
     admins = User.query.filter_by(role='admin').all()
-    products = Product.query.all()
     logs = VisitLog.query.order_by(VisitLog.timestamp.desc()).limit(20).all()
     payments = PaymentRequest.query.order_by(PaymentRequest.created_at.desc()).all()
+    seller_requests = SellerRequest.query.order_by(SellerRequest.created_at.desc()).all()
+    bank = BankDetails.query.first()
     
     stats = {
         'total_sellers': User.query.filter_by(role='seller').count(),
         'active_sellers': User.query.filter_by(role='seller', is_active=True).count(),
         'total_products': Product.query.count(),
         'total_visits': VisitLog.query.count(),
-        'pending_payments': PaymentRequest.query.filter_by(status='pending').count()
+        'pending_payments': PaymentRequest.query.filter_by(status='pending').count(),
+        'pending_requests': SellerRequest.query.filter_by(status='pending').count()
     }
     
     return render_template('admin_dashboard.html', 
-                         sellers=sellers, admins=admins, products=products,
-                         logs=logs, payments=payments, **stats)
+                         sellers=sellers, 
+                         admins=admins, 
+                         logs=logs, 
+                         payments=payments,
+                         seller_requests=seller_requests,
+                         bank=bank,
+                         **stats)
+
+@app.route('/admin/bank/edit', methods=['GET', 'POST'])
+@admin_required
+def edit_bank_details():
+    bank = BankDetails.query.first()
+    if not bank:
+        bank = BankDetails()
+        db.session.add(bank)
+        db.session.commit()
+    
+    if request.method == 'POST':
+        bank.bank_name = request.form.get('bank_name')
+        bank.account_name = request.form.get('account_name')
+        bank.account_number = request.form.get('account_number')
+        bank.mobile_money = request.form.get('mobile_money')
+        db.session.commit()
+        flash('Bank details updated successfully!', 'success')
+        return redirect(url_for('admin_dashboard'))
+    
+    return render_template('edit_bank.html', bank=bank)
+
+@app.route('/admin/seller/request/<int:request_id>/contact', methods=['POST'])
+@admin_required
+def contact_seller_request(request_id):
+    req = SellerRequest.query.get_or_404(request_id)
+    req.status = 'contacted'
+    db.session.commit()
+    flash('Marked as contacted', 'success')
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/seller/request/<int:request_id>/delete', methods=['POST'])
+@admin_required
+def delete_seller_request(request_id):
+    req = SellerRequest.query.get_or_404(request_id)
+    db.session.delete(req)
+    db.session.commit()
+    flash('Request deleted', 'success')
+    return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/seller/create', methods=['GET', 'POST'])
-@admin_required
+@super_admin_required
 def create_seller():
     if request.method == 'POST':
         username = request.form.get('username')
@@ -480,6 +589,10 @@ def create_seller():
 @admin_required
 def edit_seller(seller_id):
     seller = User.query.get_or_404(seller_id)
+    if seller.role != 'seller':
+        flash('User is not a seller', 'danger')
+        return redirect(url_for('admin_dashboard'))
+    
     if request.method == 'POST':
         seller.shop_name = request.form.get('shop_name')
         seller.whatsapp_number = request.form.get('whatsapp')
@@ -495,6 +608,10 @@ def edit_seller(seller_id):
 @admin_required
 def toggle_seller(seller_id):
     seller = User.query.get_or_404(seller_id)
+    if seller.role != 'seller':
+        flash('User is not a seller', 'danger')
+        return redirect(url_for('admin_dashboard'))
+    
     seller.is_active = not seller.is_active
     seller.suspended_at = datetime.utcnow() if not seller.is_active else None
     db.session.commit()
@@ -502,9 +619,13 @@ def toggle_seller(seller_id):
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/seller/<int:seller_id>/delete')
-@admin_required
+@super_admin_required
 def delete_seller(seller_id):
     seller = User.query.get_or_404(seller_id)
+    if seller.role != 'seller':
+        flash('User is not a seller', 'danger')
+        return redirect(url_for('admin_dashboard'))
+    
     Product.query.filter_by(seller_id=seller_id).delete()
     db.session.delete(seller)
     db.session.commit()
@@ -512,12 +633,8 @@ def delete_seller(seller_id):
     return redirect(url_for('admin_dashboard'))
 
 @app.route('/admin/admin/create', methods=['GET', 'POST'])
-@admin_required
+@super_admin_required
 def create_admin():
-    if not current_user.is_super_admin:
-        flash('Super admin required', 'danger')
-        return redirect(url_for('admin_dashboard'))
-    
     if request.method == 'POST':
         username = request.form.get('username')
         password = request.form.get('password')
@@ -543,13 +660,13 @@ def create_admin():
     return render_template('create_admin.html')
 
 @app.route('/admin/admin/<int:admin_id>/edit', methods=['GET', 'POST'])
-@admin_required
+@super_admin_required
 def edit_admin(admin_id):
-    if not current_user.is_super_admin:
-        flash('Super admin required', 'danger')
+    admin = User.query.get_or_404(admin_id)
+    if admin.role != 'admin':
+        flash('User is not an admin', 'danger')
         return redirect(url_for('admin_dashboard'))
     
-    admin = User.query.get_or_404(admin_id)
     if request.method == 'POST':
         admin.username = request.form.get('username')
         if request.form.get('password'):
@@ -561,13 +678,13 @@ def edit_admin(admin_id):
     return render_template('edit_admin.html', admin=admin)
 
 @app.route('/admin/admin/<int:admin_id>/delete')
-@admin_required
+@super_admin_required
 def delete_admin(admin_id):
-    if not current_user.is_super_admin:
-        flash('Super admin required', 'danger')
+    admin = User.query.get_or_404(admin_id)
+    if admin.role != 'admin':
+        flash('User is not an admin', 'danger')
         return redirect(url_for('admin_dashboard'))
     
-    admin = User.query.get_or_404(admin_id)
     if admin.id == current_user.id:
         flash('Cannot delete yourself', 'danger')
         return redirect(url_for('admin_dashboard'))
